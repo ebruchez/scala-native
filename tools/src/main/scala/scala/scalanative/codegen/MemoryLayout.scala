@@ -71,9 +71,16 @@ private[scalanative] object MemoryLayout {
 
   def alignmentOf(ty: nir.Type)(implicit platform: PlatformInfo): Long =
     ty match {
-      case nir.Type.Long | nir.Type.Double | nir.Type.Size =>
-        platform.sizeOfPtr
-      case nir.Type.Nothing | nir.Type.Ptr | _: nir.Type.RefKind =>
+      case nir.Type.Long | nir.Type.Double =>
+        val is32BitX86Unix = platform.is32Bit && !platform.targetsWindows &&
+          platform.targetTriple.exists(t =>
+            t.startsWith("i386") || t.startsWith("i486") ||
+              t.startsWith("i586") || t.startsWith("i686")
+          )
+        if (is32BitX86Unix) platform.sizeOfPtr
+        else BYTES_IN_LONG
+      case nir.Type.Size | nir.Type.Nothing | nir.Type.Ptr |
+          _: nir.Type.RefKind =>
         platform.sizeOfPtr
       case t: nir.Type.PrimitiveKind =>
         math.max(t.width / BITS_IN_BYTE, 1)

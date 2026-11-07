@@ -47,7 +47,7 @@ word_t *memoryMap(size_t memorySize) {
     // supports only 32-bit address space and is in most cases not recommended.
     return VirtualAlloc(NULL, memorySize, MEM_RESERVE, PAGE_NOACCESS);
 #elif defined(SCALANATIVE_FREESTANDING)
-    return (word_t *)malloc(memorySize);
+    return (word_t *)calloc(1, memorySize);
 #else // Unix
     word_t *addr = mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS,
                         HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
