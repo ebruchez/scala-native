@@ -95,9 +95,13 @@ private[scalanative] object LLVM {
         if (config.usingCppExceptions)
           Seq("-DSCALANATIVE_USING_CPP_EXCEPTIONS")
         else Nil
+      val freeStanding =
+        if (config.targetsFreeStanding)
+          Seq("-DSCALANATIVE_FREESTANDING")
+        else Nil
       val allowTargetOverrrides =
         config.compilerConfig.targetTriple.map(_ => s"-Wno-override-module")
-      multithreadingEnabled ++ usingCppExceptions ++ allowTargetOverrrides
+      multithreadingEnabled ++ usingCppExceptions ++ freeStanding ++ allowTargetOverrrides
     }
     val debugFlags = sourceLevelDebugFlags
 
@@ -325,7 +329,17 @@ private[scalanative] object LLVM {
     val workDir = config.workDir
 
     val MRICompatibleAR =
-      Discover.tryDiscover("llvm-ar", "LLVM_BIN").toOption orElse
+      Discover.tryDiscover("llvm-ar", "LLVM_BIN").toOption orElse {
+        val t = config.compilerConfig.configuredOrDetectedTriple
+        val archPrefix =
+          if (t.arch == TargetTriple.Arch.thumb || t.arch == TargetTriple.Arch.arm)
+            "arm"
+          else t.arch
+        val envPrefix =
+          if (t.env == TargetTriple.Env.EABIHF) TargetTriple.Env.EABI
+          else t.env
+        Discover.tryDiscover(s"$archPrefix-${t.os}-$envPrefix-ar").toOption
+      } orElse
         // MacOS ar command does not support -M flag...
         Discover.tryDiscover("ar").toOption.filter(_ => config.targetsLinux)
 
@@ -542,7 +556,7 @@ private[scalanative] object LLVM {
   }
 
   private def optionalPICflag(implicit config: Config): Seq[String] =
-    if (config.targetsWindows) Nil
+    if (config.targetsWindows || config.targetsFreeStanding) Nil
     else Seq("-fPIC")
 
   private def escapeWhitespaces(str: String): String = {

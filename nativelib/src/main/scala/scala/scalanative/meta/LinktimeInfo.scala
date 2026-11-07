@@ -37,6 +37,9 @@ object LinktimeInfo {
   def isNetBSD: Boolean = target.os == "netbsd"
 
   @resolvedAtLinktime
+  def isFreeStanding: Boolean = target.os == "none"
+
+  @resolvedAtLinktime
   def isMusl: Boolean = target.env == "musl"
 
   @resolvedAtLinktime("scala.scalanative.meta.linktimeinfo.is32BitPlatform")

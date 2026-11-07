@@ -353,10 +353,12 @@ private[scalanative] object TargetTriple {
       case os if os.startsWith("emscripten")  => Emscripten
       case os if os.startsWith("shadermodel") => ShaderModel
       case os if os.startsWith("liteos")      => LiteOS
+      case os if os.startsWith("none")        => NoneOS
       case _                                  => Unknown
     }
 
     final val Unknown = "unknown"
+    final val NoneOS = "none"
     final val AIX = "aix"
     final val AMDHSA = "amdhsa"
     final val AMDPAL = "amdpal"
@@ -440,10 +442,12 @@ private[scalanative] object TargetTriple {
       case env if env.startsWith("mesh")          => Mesh
       case env if env.startsWith("amplification") => Amplification
       case env if env.startsWith("ohos")          => OpenHOS
+      case env if env.startsWith("elf")           => ELF
       case _                                      => Unknown
     }
 
     final val Unknown = "unknown"
+    final val ELF = "elf"
     final val Android = "android"
     final val CODE16 = "code16"
     final val CoreCLR = "coreclr"

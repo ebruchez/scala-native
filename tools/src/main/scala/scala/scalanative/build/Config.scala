@@ -189,6 +189,9 @@ sealed trait Config {
       Seq("netbsd").exists(customTriple.contains(_))
     }
 
+  private[scalanative] lazy val targetsFreeStanding: Boolean =
+    compilerConfig.configuredOrDetectedTriple.os == TargetTriple.OS.NoneOS
+
   // see https://no-color.org/
   private[scalanative] lazy val noColor: Boolean = sys.env.contains("NO_COLOR")
 
@@ -213,7 +216,8 @@ sealed trait Config {
       val disabled = compilerConfig.cppOptions.contains("-fno-cxx-exceptions")
       val enabled = compilerConfig.cppOptions.contains("-fcxx-exceptions")
       // New EH does not work good with LTO https://github.com/scala-native/scala-native/issues/4190
-      val enabledLTO = compilerConfig.lto != build.LTO.none
+      val enabledLTO =
+        compilerConfig.lto != build.LTO.none && !targetsFreeStanding
       !disabled && (enabled || enabledLTO)
     }
 }
