@@ -52,9 +52,18 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
         maxHeapSize = memoryLimit;
     }
 
+#ifdef SCALANATIVE_FREESTANDING
+    uint32_t maxNumberOfBlocks =
+        (maxHeapSize - BLOCK_TOTAL_SIZE - sizeof(Bytemap)) /
+        SPACE_USED_PER_BLOCK;
+#else
     uint32_t maxNumberOfBlocks = maxHeapSize / SPACE_USED_PER_BLOCK;
+#endif
     assert(maxNumberOfBlocks > 1);
     uint32_t initialBlockCount = minHeapSize / SPACE_USED_PER_BLOCK;
+    if (initialBlockCount > maxNumberOfBlocks) {
+        initialBlockCount = maxNumberOfBlocks;
+    }
     atomic_init(&heap->collectionGeneration, 0);
     heap->maxHeapSize = maxHeapSize;
     heap->blockCount = initialBlockCount;
@@ -81,15 +90,26 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
                                             LINE_METADATA_SIZE / WORD_SIZE;
 
     // reserve space for bytemap
+#ifdef SCALANATIVE_FREESTANDING
+    size_t maxBlockSpaceSize = (size_t)maxNumberOfBlocks * BLOCK_TOTAL_SIZE;
+    size_t bytemapSpaceSize =
+        maxBlockSpaceSize / ALLOCATION_ALIGNMENT + sizeof(Bytemap);
+#else
     size_t bytemapSpaceSize =
         maxHeapSize / ALLOCATION_ALIGNMENT + sizeof(Bytemap);
+#endif
     Bytemap *bytemap =
         (Bytemap *)Heap_mapAndAlign(bytemapSpaceSize, ALLOCATION_ALIGNMENT);
     heap->bytemap = bytemap;
 
     // Init heap for small objects
+#ifdef SCALANATIVE_FREESTANDING
+    word_t *heapStart =
+        Heap_mapAndAlign(maxBlockSpaceSize + BLOCK_TOTAL_SIZE, BLOCK_TOTAL_SIZE);
+#else
     word_t *heapStart = Heap_mapAndAlign(maxHeapSize, BLOCK_TOTAL_SIZE);
-    if (!heapStart) {
+#endif
+    if (!blockMetaStart || !lineMetaStart || !bytemap || !heapStart) {
         GC_LOG_ERROR("Failed to allocate heap space, "
                      "requested size=%.2fMB, available memory=%.2fMB. "
                      "Consider setting GC_MAXIMUM_HEAP_SIZE env variable "
@@ -119,7 +139,11 @@ void Heap_Init(Heap *heap, size_t minHeapSize, size_t maxHeapSize) {
 #endif // _WIN32
 
     BlockAllocator_Init(&blockAllocator, blockMetaStart, initialBlockCount);
+#ifdef SCALANATIVE_FREESTANDING
+    Bytemap_Init(bytemap, heapStart, maxBlockSpaceSize);
+#else
     Bytemap_Init(bytemap, heapStart, maxHeapSize);
+#endif
     Heap_RefillEmergencyBlock(heap);
     char *statsFile = Settings_StatsFileName();
     if (statsFile != NULL) {
@@ -204,7 +228,8 @@ static bool Heap_overheadLimitReached(Heap *heap, uint64_t start_ns,
     uint64_t gcNs = now - start_ns;
     uint64_t sinceLast =
         heap->lastCollectionEndNs == 0 ? gcNs : now - heap->lastCollectionEndNs;
-    bool gcBound = gcNs * 100 >= sinceLast * HEAP_OVERHEAD_GC_PERCENT;
+    bool gcBound =
+        sinceLast > 0 && gcNs * 100 >= sinceLast * HEAP_OVERHEAD_GC_PERCENT;
     if (gcBound && lowYield)
         heap->overheadStreak++;
     else

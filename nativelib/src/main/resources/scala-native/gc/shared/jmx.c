@@ -1,6 +1,7 @@
 #if defined(SCALANATIVE_GC_IMMIX) || defined(SCALANATIVE_GC_COMMIX) ||         \
     defined(SCALANATIVE_GC_BOEHM)
 
+#include <stdint.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 

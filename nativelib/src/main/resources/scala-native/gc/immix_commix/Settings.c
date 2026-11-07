@@ -7,6 +7,7 @@
 
 #include <stdlib.h>
 #include "immix_commix/Settings.h"
+#include "immix_commix/CollectorState.h"
 #include "shared/Parsing.h"
 #include "shared/Settings.h"
 #include "immix_commix/Constants.h"
@@ -16,14 +17,27 @@
 // Heap Settings
 // =============================================================================
 size_t Settings_MinHeapSize(void) {
+#ifdef SCALANATIVE_FREESTANDING
+    size_t limit = Heap_getMemoryLimit();
+    size_t defaultMin =
+        DEFAULT_MIN_HEAP_SIZE < limit ? DEFAULT_MIN_HEAP_SIZE : limit;
+    return Parse_Env_Or_Default("GC_INITIAL_HEAP_SIZE", defaultMin);
+#else
     return Parse_Env_Or_Default("GC_INITIAL_HEAP_SIZE", DEFAULT_MIN_HEAP_SIZE);
+#endif
 }
 
 size_t Settings_MaxHeapSize(void) {
     return Parse_Env_Or_Default("GC_MAXIMUM_HEAP_SIZE", UNLIMITED_HEAP_SIZE);
 }
 
-char *Settings_StatsFileName(void) { return getenv(GC_STATS_FILE_SETTING); }
+char *Settings_StatsFileName(void) {
+#ifdef SCALANATIVE_FREESTANDING
+    return NULL;
+#else
+    return getenv(GC_STATS_FILE_SETTING);
+#endif
+}
 
 // =============================================================================
 // Settings Initialization

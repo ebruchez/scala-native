@@ -4,7 +4,11 @@
 #include "shared/GCTypes.h"
 #include "immix_commix/headers/ObjectHeader.h"
 
+#ifdef SCALANATIVE_FREESTANDING
+#define INITIAL_STACK_SIZE 1024
+#else
 #define INITIAL_STACK_SIZE (256 * 1024)
+#endif
 
 typedef Object *Stack_Type;
 

@@ -6,9 +6,10 @@
 
 #include <stdlib.h>
 #include <memory.h>
+#include <stdint.h>
 #include <stdatomic.h>
 #include <assert.h>
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(SCALANATIVE_FREESTANDING)
 #include <pthread.h>
 #endif
 #include "shared/ScalaNativeGC.h"
@@ -110,6 +111,7 @@ void scalanative_GC_remove_roots(void *addr_low, void *addr_high) {
     GC_Roots_RemoveByRange(customRoots, range);
 }
 
+#ifndef SCALANATIVE_FREESTANDING
 typedef void *RoutineArgs;
 typedef struct {
     ThreadStartRoutine fn;
@@ -178,6 +180,7 @@ int scalanative_GC_pthread_create(pthread_t *thread, pthread_attr_t *attr,
                           (RoutineArgs)proxyArgs);
 }
 #endif
+#endif // !SCALANATIVE_FREESTANDING
 
 void scalanative_GC_set_mutator_thread_state(GC_MutatorThreadState state) {
     if (state == GC_MutatorThreadState_Managed)

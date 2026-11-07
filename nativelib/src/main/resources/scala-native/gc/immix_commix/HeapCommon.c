@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdatomic.h>
 #include "immix_commix/CollectorState.h"
 #include "immix_commix/Constants.h"

@@ -61,6 +61,11 @@ void thread_yield();
 
 pid_t process_getid();
 
+#define mutex_init scalanative_GC_mutex_init
+#define mutex_lock scalanative_GC_mutex_lock
+#define mutex_tryLock scalanative_GC_mutex_tryLock
+#define mutex_unlock scalanative_GC_mutex_unlock
+
 bool mutex_init(mutex_t *ref);
 bool mutex_lock(mutex_t *ref);
 bool mutex_tryLock(mutex_t *ref);

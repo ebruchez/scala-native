@@ -4,7 +4,13 @@
     defined(SCALANATIVE_GC_BOEHM)
 
 #include "Time.h"
+#include <stdint.h>
 #include <time.h>
+
+#ifdef SCALANATIVE_FREESTANDING
+extern int64_t scalanative_current_time_millis(void);
+extern int64_t scalanative_nano_time(void);
+#endif
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -34,7 +40,7 @@ long long Time_current_millis(void) {
     // GetTickCount64 returns monotonic time in milliseconds
     return (long long)GetTickCount64();
 #elif defined(SCALANATIVE_FREESTANDING)
-    return 0;
+    return (long long)scalanative_current_time_millis();
 #else
     // Use CLOCK_MONOTONIC for elapsed time measurement
     struct timespec ts = {};
@@ -59,7 +65,9 @@ long long Time_current_nanos(void) {
             nano_time = count.QuadPart * nanosPerCount;
         }
     }
-#elif !defined(SCALANATIVE_FREESTANDING)
+#elif defined(SCALANATIVE_FREESTANDING)
+    nano_time = (long long)scalanative_nano_time();
+#else
 #if defined(__FreeBSD__)
     int clock = CLOCK_MONOTONIC_PRECISE; // OS has no CLOCK_MONOTONIC_RAW
 #elif defined(__OpenBSD__) || defined(__NetBSD__)
