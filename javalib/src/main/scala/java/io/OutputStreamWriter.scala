@@ -6,6 +6,8 @@ import java.util.Objects
 
 import scala.annotation.tailrec
 
+import scala.scalanative.meta.LinktimeInfo.isFreeStanding
+
 class OutputStreamWriter(
     private var out: OutputStream,
     private var enc: CharsetEncoder
@@ -27,7 +29,8 @@ class OutputStreamWriter(
    *  written to the underlying output stream. The valid bytes are between 0 and
    *  outBuf.position.
    */
-  private var outBuf: ByteBuffer = ByteBuffer.allocate(4096)
+  private var outBuf: ByteBuffer =
+    ByteBuffer.allocate(if (isFreeStanding) 128 else 4096)
 
   def this(out: OutputStream, cs: Charset) = {
     this(

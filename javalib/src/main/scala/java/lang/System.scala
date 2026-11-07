@@ -6,7 +6,8 @@ import java.util.WindowsHelperMethods
 import java.{util => ju}
 
 import scala.scalanative.ffi.time
-import scala.scalanative.meta.LinktimeInfo.isWindows
+import scala.scalanative.libc.stdio
+import scala.scalanative.meta.LinktimeInfo.{isFreeStanding, isWindows}
 import scala.scalanative.posix.pwdOps._
 import scala.scalanative.posix.{pwd, unistd}
 import scala.scalanative.runtime.javalib.Proxy
@@ -279,9 +280,54 @@ object System {
 // Extract mutable fields to custom object allowing to skip allocations of unused features
 private object Streams {
   import FileDescriptor.{err => stderr, in => stdin, out => stdout}
-  var in: InputStream = new FileInputStream(stdin)
-  var out: PrintStream = new PrintStream(new FileOutputStream(stdout))
-  var err: PrintStream = new PrintStream(new FileOutputStream(stderr))
+
+  private final class FreeStandingOutputStream(isErr: scala.Boolean)
+      extends OutputStream {
+    private def stream: Ptr[stdio.FILE] =
+      if (isErr) stdio.stderr else stdio.stdout
+
+    override def write(b: Int): Unit = {
+      stdio.fputc(b, stream)
+      if (b == '\n') stdio.fflush(stream)
+    }
+
+    override def write(
+        b: scala.Array[scala.Byte],
+        off: Int,
+        len: Int
+    ): Unit = {
+      if (b == null) throw new NullPointerException()
+      if (off < 0 || len < 0 || len > b.length - off)
+        throw new IndexOutOfBoundsException()
+      if (len > 0) {
+        stdio.fwrite(b.at(off), 1.toUSize, len.toUSize, stream)
+        stdio.fflush(stream)
+      }
+    }
+
+    override def flush(): Unit = {
+      stdio.fflush(stream)
+    }
+  }
+
+  private final class FreeStandingInputStream extends InputStream {
+    override def read(): Int = {
+      val ch = stdio.fgetc(stdio.stdin)
+      if (ch == stdio.EOF) -1 else ch
+    }
+  }
+
+  var in: InputStream =
+    if (isFreeStanding) new FreeStandingInputStream()
+    else new FileInputStream(stdin)
+  var out: PrintStream =
+    if (isFreeStanding)
+      new PrintStream(new FreeStandingOutputStream(isErr = false))
+    else new PrintStream(new FileOutputStream(stdout))
+  var err: PrintStream =
+    if (isFreeStanding)
+      new PrintStream(new FreeStandingOutputStream(isErr = true))
+    else new PrintStream(new FileOutputStream(stderr))
 }
 
 private[java] object SystemProperties {
@@ -416,7 +462,8 @@ private[java] object SystemProperties {
 
   private def getCurrentDirectory(): Option[String] = {
     val bufSize = 1024.toUInt
-    if (isWindows) {
+    if (isFreeStanding) None
+    else if (isWindows) {
       val buf: Ptr[CChar16] = stackalloc[CChar16](bufSize)
       if (GetCurrentDirectoryW(bufSize, buf) != 0)
         Some(fromCWideString(buf, StandardCharsets.UTF_16LE))
@@ -429,7 +476,8 @@ private[java] object SystemProperties {
   }
 
   private def getUserHomeDirectory(): Option[String] = {
-    if (isWindows) {
+    if (isFreeStanding) None
+    else if (isWindows) {
       WindowsHelperMethods.withUserToken(AccessToken.TOKEN_QUERY) { token =>
         val bufSize = stackalloc[UInt]()
         !bufSize = 256.toUInt
@@ -490,7 +538,7 @@ private[java] object SystemProperties {
     nonEmptyEnv("USER")
       .orElse(nonEmptyEnv("LOGNAME"))
       .orElse {
-        if (isWindows) None
+        if (isWindows || isFreeStanding) None
         else {
           val passwd = stackalloc[pwd.passwd]()
           if (pwd.getpwuid(unistd.geteuid(), passwd) != 0) None
@@ -543,9 +591,11 @@ private object EnvVars {
       envsMap
     }
 
-    ju.Collections.unmodifiableMap {
-      if (isWindows) getEnvsWindows()
-      else getEnvsUnix()
-    }
+    if (isFreeStanding) ju.Collections.emptyMap()
+    else
+      ju.Collections.unmodifiableMap {
+        if (isWindows) getEnvsWindows()
+        else getEnvsUnix()
+      }
   }
 }

@@ -16,8 +16,10 @@ class ObjectHandle(val value: Long) extends AnyVal {
 
   def valid(): Boolean = value != ObjectHandle.Invalid.value
 
-  def close(): Unit = if (valid())
-    if (LinktimeInfo.isWindows) CloseHandle(asHandle) else unistd.close(asInt)
+  def close(): Unit = if (valid()) {
+    if (LinktimeInfo.isWindows) CloseHandle(asHandle)
+    else if (!LinktimeInfo.isFreeStanding) unistd.close(asInt)
+  }
 }
 
 object ObjectHandle {

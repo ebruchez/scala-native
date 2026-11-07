@@ -2,6 +2,10 @@
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#elif defined(SCALANATIVE_FREESTANDING)
+__attribute__((weak)) long long __scalanative_current_time_millis(void) {
+    return 0LL;
+}
 #else
 #include <stdio.h>
 #include <sys/time.h>
@@ -40,6 +44,8 @@ long long scalanative_current_time_millis() {
 
     current_time_millis =
         (li.QuadPart - UNIX_TIME_START) / FILETIME_TICKS_PER_MILLI;
+#elif defined(SCALANATIVE_FREESTANDING)
+    current_time_millis = __scalanative_current_time_millis();
 #else
 #define MILLIS_PER_SEC 1000LL
 

@@ -126,6 +126,8 @@ class Runtime private () {
       val sysInfo = stackalloc[SystemInfo]()
       GetSystemInfo(sysInfo)
       sysInfo.numberOfProcessors.toInt
+    } else if (LinktimeInfo.isFreeStanding) {
+      1
     } else {
       val nLogicalCPUs =
         if (LinktimeInfo.isLinux)
@@ -175,7 +177,7 @@ object Runtime extends Runtime() {
       finally exit(128 + sig)
 
     // On Windows the handler runs on its own thread, it never interrupts a park
-    if (!LinktimeInfo.isMultithreadingEnabled || LinktimeInfo.isWindows)
+    if (!LinktimeInfo.isMultithreadingEnabled || LinktimeInfo.isWindows || LinktimeInfo.isFreeStanding)
       runHooksAndExit()
     // Hooks are already run by exit, possibly by the interrupted thread
     else if (!getRuntime().shutdownStarted || signalShutdownStarted.get()) {

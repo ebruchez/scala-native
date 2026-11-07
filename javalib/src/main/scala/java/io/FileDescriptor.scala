@@ -4,7 +4,7 @@ import java.io.FileDescriptor._
 
 import scala.scalanative.annotation.alwaysinline
 import scala.scalanative.javalib.io._
-import scala.scalanative.meta.LinktimeInfo.isWindows
+import scala.scalanative.meta.LinktimeInfo.{isFreeStanding, isWindows}
 import scala.scalanative.posix.{fcntl, unistd}
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
@@ -51,7 +51,9 @@ final class FileDescriptor private[java] (
       else fd <= 2
 
     val failed = isStdOrInvalidFileDescriptor || !readOnly && {
-      if (isWindows) !FlushFileBuffers(handle) else unistd.fsync(fd) != 0
+      if (isWindows) !FlushFileBuffers(handle)
+      else if (isFreeStanding) true
+      else unistd.fsync(fd) != 0
     }
 
     if (failed) throw new SyncFailedException("sync failed")
@@ -71,18 +73,24 @@ object FileDescriptor {
   val in: FileDescriptor =
     if (isWindows)
       new FileDescriptor(ConsoleApiExt.stdIn, readOnly = true)
+    else if (isFreeStanding)
+      new FileDescriptor(0, readOnly = true)
     else
       new FileDescriptor(unistd.STDIN_FILENO, readOnly = true)
 
   val out: FileDescriptor =
     if (isWindows)
       new FileDescriptor(ConsoleApiExt.stdOut, readOnly = false)
+    else if (isFreeStanding)
+      new FileDescriptor(1, readOnly = false)
     else
       new FileDescriptor(unistd.STDOUT_FILENO, readOnly = false)
 
   val err: FileDescriptor =
     if (isWindows)
       new FileDescriptor(ConsoleApiExt.stdErr, readOnly = false)
+    else if (isFreeStanding)
+      new FileDescriptor(2, readOnly = false)
     else
       new FileDescriptor(unistd.STDERR_FILENO, readOnly = false)
 
@@ -105,6 +113,8 @@ object FileDescriptor {
           fail()
         }
         ObjectHandle(handle)
+      } else if (isFreeStanding) {
+        fail()
       } else {
         val fd = fcntl.open(toCString(file.getPath()), fcntl.O_RDONLY, 0.toUInt)
         if (fd == -1) {

@@ -13,7 +13,9 @@ import scala.scalanative.annotation.alwaysinline
 import scala.scalanative.concurrent.NativeExecutionContext
 import scala.scalanative.libc.stdatomic.atomic_thread_fence
 import scala.scalanative.libc.stdatomic.memory_order._
-import scala.scalanative.meta.LinktimeInfo.{isMultithreadingEnabled, isWindows}
+import scala.scalanative.meta.LinktimeInfo.{
+  isFreeStanding, isMultithreadingEnabled, isWindows
+}
 import scala.scalanative.runtime.Intrinsics._
 import scala.scalanative.runtime.NativeThread.State._
 import scala.scalanative.runtime.NativeThread.{State => _, _}
@@ -592,6 +594,7 @@ object Thread {
 
   @alwaysinline private[lang] def nativeCompanion: NativeThread.Companion =
     if (isWindows) WindowsThread
+    else if (isFreeStanding) FreeStandingThread
     else PosixThread
 
   @exported("scalanative_externalThread_adopt")
@@ -615,6 +618,7 @@ object Thread {
       provisional = true
       nativeThread =
         if (isWindows) WindowsThread.adoptCurrentThread(thread)
+        else if (isFreeStanding) FreeStandingThread.adoptCurrentThread(thread)
         else PosixThread.adoptCurrentThread(thread)
       thread.platformCtx.nativeThread = nativeThread
       NativeThread.bindExternalThread(nativeThread)

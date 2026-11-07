@@ -2,7 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <wchar.h>
-#else
+#elif !defined(SCALANATIVE_FREESTANDING)
 // #define _GNU_SOURCE /* for tm_gmtoff and tm_zone if needed */
 #include <stdio.h>
 #include <time.h>
@@ -21,6 +21,8 @@ long long scalanative_time_zone_offset() {
         // Bias is in minutes
         time_zone_offset_secs = tzi.Bias * 60;
     }
+#elif defined(SCALANATIVE_FREESTANDING)
+    time_zone_offset_secs = 0LL;
 #else
     time_t t = time(NULL);
     struct tm lt = {0};

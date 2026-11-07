@@ -2,6 +2,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "win_freq.h"
+#elif defined(SCALANATIVE_FREESTANDING)
+__attribute__((weak)) long long __scalanative_nano_time(void) {
+    return 0LL;
+}
 #else
 #include <time.h>
 #endif // defined(_WIN32)
@@ -34,6 +38,8 @@ long long scalanative_nano_time() {
             nano_time = count.QuadPart * nanosPerCount;
         }
     }
+#elif defined(SCALANATIVE_FREESTANDING)
+    nano_time = __scalanative_nano_time();
 #else
 #if defined(__FreeBSD__)
     int clock = CLOCK_MONOTONIC_PRECISE; // OS has no CLOCK_MONOTONIC_RAW
