@@ -27,7 +27,17 @@ class TargetTripleTest {
     "x86_64-portbld-freebsd13.1" ->
       TargetTriple("x86_64", "unknown", "freebsd", "unknown"),
     "i386-linux-gnu" ->
-      TargetTriple("i386", "unknown", "linux", "gnu")
+      TargetTriple("i386", "unknown", "linux", "gnu"),
+    "thumbv6m-none-eabi" ->
+      TargetTriple("thumb", "unknown", "none", "eabi"),
+    "thumbv8m.main-none-eabi" ->
+      TargetTriple("thumb", "unknown", "none", "eabi"),
+    "arm-none-eabi" ->
+      TargetTriple("arm", "unknown", "none", "eabi"),
+    "riscv32-unknown-none-elf" ->
+      TargetTriple("riscv32", "unknown", "none", "elf"),
+    "aarch64-none-elf" ->
+      TargetTriple("aarch64", "unknown", "none", "elf")
   )
 
   // samples based on parsed to type

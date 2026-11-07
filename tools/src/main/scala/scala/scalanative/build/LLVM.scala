@@ -97,7 +97,12 @@ private[scalanative] object LLVM {
         else Nil
       val freeStanding =
         if (config.targetsFreeStanding)
-          Seq("-DSCALANATIVE_FREESTANDING")
+          Seq(
+            "-DSCALANATIVE_FREESTANDING",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-Wno-atomic-alignment"
+          )
         else Nil
       val allowTargetOverrrides =
         config.compilerConfig.targetTriple.map(_ => s"-Wno-override-module")
