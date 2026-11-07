@@ -58,10 +58,14 @@ private[codegen] object Generate {
       meta.classes.foreach { cls =>
         val rtti = meta.rtti(cls)
         val pos = cls.position
-        buf += meta.globalSections.define(
-          GlobalSections.ClassInfo,
-          nir.Defn.Var(nir.Attrs.None, rtti.name, rtti.struct, rtti.value)(pos)
-        )
+        if (meta.usesLockWords) {
+          buf += meta.globalSections.define(
+            GlobalSections.ClassInfo,
+            nir.Defn.Var(nir.Attrs.None, rtti.name, rtti.struct, rtti.value)(pos)
+          )
+        } else {
+          buf += nir.Defn.Const(nir.Attrs.None, rtti.name, rtti.struct, rtti.value)(pos)
+        }
       }
     }
 
@@ -69,10 +73,14 @@ private[codegen] object Generate {
       meta.traits.foreach { trt =>
         val rtti = meta.rtti(trt)
         val pos = trt.position
-        buf += meta.globalSections.define(
-          GlobalSections.ClassInfo,
-          nir.Defn.Var(nir.Attrs.None, rtti.name, rtti.struct, rtti.value)(pos)
-        )
+        if (meta.usesLockWords) {
+          buf += meta.globalSections.define(
+            GlobalSections.ClassInfo,
+            nir.Defn.Var(nir.Attrs.None, rtti.name, rtti.struct, rtti.value)(pos)
+          )
+        } else {
+          buf += nir.Defn.Const(nir.Attrs.None, rtti.name, rtti.struct, rtti.value)(pos)
+        }
       }
     }
 
@@ -142,7 +150,10 @@ private[codegen] object Generate {
       val gcInit = nir.Inst.Let(nir.Op.Call(InitSig, Init, Seq.empty), unwind)
       // Runtime-owned static storage must be rooted before Scala initializers
       // can inflate monitors or trigger a collection.
-      Seq(gcInit, nir.Inst.Let(nir.Op.Call(InitSig, RegisterStaticRoots, Seq.empty), unwind))
+      if (meta.usesLockWords)
+        Seq(gcInit, nir.Inst.Let(nir.Op.Call(InitSig, RegisterStaticRoots, Seq.empty), unwind))
+      else
+        Seq(gcInit)
     }
 
     private def genThreadBootstrap(library: Boolean, complete: Boolean)(implicit fresh: nir.Fresh): Seq[nir.Inst] = {
@@ -267,15 +278,23 @@ private[codegen] object Generate {
             val moduleTyVal = nir.Val.Global(moduleTyName, nir.Type.Ptr)
             val instanceName = name.member(nir.Sig.Generated("instance"))
             val instanceVal = nir.Val.StructValue(moduleTyVal :: meta.lockWordVals)
-            // Needs to be defined as var, const does not allow to modify lock-word field
-            val instanceDefn = nir.Defn.Var(
-              nir.Attrs.None,
-              instanceName,
-              meta.layouts.ObjectHeader.layout,
-              instanceVal
-            )
-
-            buf += meta.globalSections.define(GlobalSections.GlobalObjects, instanceDefn)
+            if (meta.usesLockWords) {
+              // Needs to be defined as var, const does not allow to modify lock-word field
+              val instanceDefn = nir.Defn.Var(
+                nir.Attrs.None,
+                instanceName,
+                meta.layouts.ObjectHeader.layout,
+                instanceVal
+              )
+              buf += meta.globalSections.define(GlobalSections.GlobalObjects, instanceDefn)
+            } else {
+              buf += nir.Defn.Const(
+                nir.Attrs.None,
+                instanceName,
+                meta.layouts.ObjectHeader.layout,
+                instanceVal
+              )
+            }
           } else {
             val initSig = nir.Type.Function(Seq(clsTy), nir.Type.Unit)
             val init = nir.Val.Global(name.member(nir.Sig.Ctor(Seq.empty)), nir.Type.Ptr)

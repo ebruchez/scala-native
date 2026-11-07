@@ -1996,10 +1996,15 @@ private[scalanative] object Lower {
       val StringCls = ClassRef.unapply(nir.Rt.StringName).get
       val CharArrayCls = ClassRef.unapply(CharArrayName).get
 
+      def stringConst(v: nir.Val): nir.Val.Const =
+        if (meta.usesLockWords)
+          meta.globalSections.constant(GlobalSections.Strings, v)
+        else
+          nir.Val.Const(v)
+
       val chars = value.toCharArray
       val charsLength = nir.Val.Int(chars.length)
-      val charsConst = meta.globalSections.constant(
-        GlobalSections.Strings,
+      val charsConst = stringConst(
         nir.Val.StructValue(
           rtti(CharArrayCls).const ::
             meta.lockWordVals :::
@@ -2025,8 +2030,7 @@ private[scalanative] object Lower {
           util.unreachable
       }
 
-      meta.globalSections.constant(
-        GlobalSections.Strings,
+      stringConst(
         nir.Val.StructValue(
           rtti(StringCls).const ::
             meta.lockWordVals ++
