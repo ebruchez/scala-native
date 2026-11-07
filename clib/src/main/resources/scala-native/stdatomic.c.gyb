@@ -1,8 +1,8 @@
 // clang-format off
 #if defined(SCALANATIVE_COMPILE_ALWAYS) || defined(__SCALANATIVE_C_STDATOMIC)
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 memory_order scalanative_atomic_memory_order_relaxed() { return memory_order_relaxed;}
 memory_order scalanative_atomic_memory_order_consume() { return memory_order_consume;}
@@ -13,6 +13,42 @@ memory_order scalanative_atomic_memory_order_seq_cst() { return memory_order_seq
 
 void scalanative_atomic_thread_fence(memory_order order) { atomic_thread_fence(order);}
 void scalanative_atomic_signal_fence(memory_order order) { atomic_signal_fence(order);}
+
+#if defined(SCALANATIVE_FREESTANDING) && !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+#define SN_ATOMIC(T) T
+#define SN_ATOMIC_INIT(atm, val) (*(atm) = (val))
+#define SN_ATOMIC_LOAD(atm) (*(atm))
+#define SN_ATOMIC_LOAD_EXPLICIT(atm, order) ((void)(order), *(atm))
+#define SN_ATOMIC_STORE(atm, val) (*(atm) = (val))
+#define SN_ATOMIC_STORE_EXPLICIT(atm, val, order) ((void)(order), *(atm) = (val))
+#define SN_ATOMIC_EXCHANGE(T, atm, val) ({ T _old = *(atm); *(atm) = (val); _old; })
+#define SN_ATOMIC_EXCHANGE_EXPLICIT(T, atm, val, order) ((void)(order), SN_ATOMIC_EXCHANGE(T, atm, val))
+#define SN_ATOMIC_CAS(atm, exp, des) (*(atm) == *(exp) ? (*(atm) = (des), true) : (*(exp) = *(atm), false))
+#define SN_ATOMIC_CAS_EXPLICIT(atm, exp, des, s, f) ((void)(s), (void)(f), SN_ATOMIC_CAS(atm, exp, des))
+#define SN_ATOMIC_FETCH_add(T, atm, val) ({ T _old = *(atm); *(atm) = _old + (val); _old; })
+#define SN_ATOMIC_FETCH_sub(T, atm, val) ({ T _old = *(atm); *(atm) = _old - (val); _old; })
+#define SN_ATOMIC_FETCH_and(T, atm, val) ({ T _old = *(atm); *(atm) = _old & (val); _old; })
+#define SN_ATOMIC_FETCH_or(T, atm, val) ({ T _old = *(atm); *(atm) = _old | (val); _old; })
+#define SN_ATOMIC_FETCH_xor(T, atm, val) ({ T _old = *(atm); *(atm) = _old ^ (val); _old; })
+#define SN_ATOMIC_FETCH_EXPLICIT(op, T, atm, val, order) ((void)(order), SN_ATOMIC_FETCH_##op(T, atm, val))
+#else
+#define SN_ATOMIC(T) _Atomic(T)
+#define SN_ATOMIC_INIT(atm, val) atomic_init(atm, val)
+#define SN_ATOMIC_LOAD(atm) atomic_load(atm)
+#define SN_ATOMIC_LOAD_EXPLICIT(atm, order) atomic_load_explicit(atm, order)
+#define SN_ATOMIC_STORE(atm, val) atomic_store(atm, val)
+#define SN_ATOMIC_STORE_EXPLICIT(atm, val, order) atomic_store_explicit(atm, val, order)
+#define SN_ATOMIC_EXCHANGE(T, atm, val) atomic_exchange(atm, val)
+#define SN_ATOMIC_EXCHANGE_EXPLICIT(T, atm, val, order) atomic_exchange_explicit(atm, val, order)
+#define SN_ATOMIC_CAS(atm, exp, des) atomic_compare_exchange_strong(atm, exp, des)
+#define SN_ATOMIC_CAS_EXPLICIT(atm, exp, des, s, f) atomic_compare_exchange_strong_explicit(atm, exp, des, s, f)
+#define SN_ATOMIC_FETCH_add(T, atm, val) atomic_fetch_add(atm, val)
+#define SN_ATOMIC_FETCH_sub(T, atm, val) atomic_fetch_sub(atm, val)
+#define SN_ATOMIC_FETCH_and(T, atm, val) atomic_fetch_and(atm, val)
+#define SN_ATOMIC_FETCH_or(T, atm, val) atomic_fetch_or(atm, val)
+#define SN_ATOMIC_FETCH_xor(T, atm, val) atomic_fetch_xor(atm, val)
+#define SN_ATOMIC_FETCH_EXPLICIT(op, T, atm, val, order) atomic_fetch_##op##_explicit(atm, val, order)
+#endif
 %{
   atomics = [
     ('bool', 'bool'),
@@ -31,20 +67,20 @@ void scalanative_atomic_signal_fence(memory_order order) { atomic_signal_fence(o
 }%
 % for (T, N) in atomics:
 
-void scalanative_atomic_init_${N}(_Atomic(${T})* atm, ${T} init_value) { atomic_init(atm, init_value);}
-${T} scalanative_atomic_load_${N}(_Atomic(${T})* atm) { return atomic_load(atm);}
-${T} scalanative_atomic_load_explicit_${N}(_Atomic(${T})* atm, memory_order memoryOrder) { return atomic_load_explicit(atm, memoryOrder);}
-void scalanative_atomic_store_${N}(_Atomic(${T})* atm, ${T} val) {atomic_store(atm, val);}
-void scalanative_atomic_store_explicit_${N}(_Atomic(${T})* atm, ${T} val, memory_order memoryOrder) { atomic_store_explicit(atm, val, memoryOrder);}
-${T} scalanative_atomic_exchange_${N}(_Atomic(${T})* atm, ${T} val) { return atomic_exchange(atm, val);}
-${T} scalanative_atomic_exchange_explicit_${N}(_Atomic(${T})* atm, ${T} val, memory_order memoryOrder) { return atomic_exchange_explicit(atm, val, memoryOrder);}
+void scalanative_atomic_init_${N}(SN_ATOMIC(${T})* atm, ${T} init_value) { SN_ATOMIC_INIT(atm, init_value);}
+${T} scalanative_atomic_load_${N}(SN_ATOMIC(${T})* atm) { return SN_ATOMIC_LOAD(atm);}
+${T} scalanative_atomic_load_explicit_${N}(SN_ATOMIC(${T})* atm, memory_order memoryOrder) { return SN_ATOMIC_LOAD_EXPLICIT(atm, memoryOrder);}
+void scalanative_atomic_store_${N}(SN_ATOMIC(${T})* atm, ${T} val) {SN_ATOMIC_STORE(atm, val);}
+void scalanative_atomic_store_explicit_${N}(SN_ATOMIC(${T})* atm, ${T} val, memory_order memoryOrder) { SN_ATOMIC_STORE_EXPLICIT(atm, val, memoryOrder);}
+${T} scalanative_atomic_exchange_${N}(SN_ATOMIC(${T})* atm, ${T} val) { return SN_ATOMIC_EXCHANGE(${T}, atm, val);}
+${T} scalanative_atomic_exchange_explicit_${N}(SN_ATOMIC(${T})* atm, ${T} val, memory_order memoryOrder) { return SN_ATOMIC_EXCHANGE_EXPLICIT(${T}, atm, val, memoryOrder);}
 % for cmp in ['strong', 'weak']:
-bool scalanative_atomic_compare_exchange_${cmp}_${N}(_Atomic(${T})* atm, ${T}* expected, ${T} desired) { return atomic_compare_exchange_${cmp}(atm, expected, desired);}
-bool scalanative_atomic_compare_exchange_${cmp}_explicit_${N}(_Atomic(${T})* atm, ${T}* expected, ${T} desired, memory_order onSucc, memory_order onFail) { return atomic_compare_exchange_${cmp}_explicit(atm, expected, desired, onSucc, onFail);}
+bool scalanative_atomic_compare_exchange_${cmp}_${N}(SN_ATOMIC(${T})* atm, ${T}* expected, ${T} desired) { return SN_ATOMIC_CAS(atm, expected, desired);}
+bool scalanative_atomic_compare_exchange_${cmp}_explicit_${N}(SN_ATOMIC(${T})* atm, ${T}* expected, ${T} desired, memory_order onSucc, memory_order onFail) { return SN_ATOMIC_CAS_EXPLICIT(atm, expected, desired, onSucc, onFail);}
 % end
 % for op in ['add', 'sub', 'and', 'or', 'xor']:
-${T} scalanative_atomic_fetch_${op}_${N}(_Atomic(${T})* atm, ${T} val) { return atomic_fetch_${op}(atm, val);}
-${T} scalanative_atomic_fetch_${op}_explicit_${N}(_Atomic(${T})* atm, ${T} val, memory_order memoryOrder) { return atomic_fetch_${op}_explicit(atm, val, memoryOrder);}
+${T} scalanative_atomic_fetch_${op}_${N}(SN_ATOMIC(${T})* atm, ${T} val) { return SN_ATOMIC_FETCH_${op}(${T}, atm, val);}
+${T} scalanative_atomic_fetch_${op}_explicit_${N}(SN_ATOMIC(${T})* atm, ${T} val, memory_order memoryOrder) { return SN_ATOMIC_FETCH_EXPLICIT(${op}, ${T}, atm, val, memoryOrder);}
 % end
 % end
 #endif // defined(SCALANATIVE_COMPILE_ALWAYS) || defined(__SCALANATIVE_C_STDATOMIC)
