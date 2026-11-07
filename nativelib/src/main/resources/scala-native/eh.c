@@ -11,6 +11,14 @@
 #include "gc/shared/ThreadUtil.h"
 #include <stddef.h>
 
+#if defined(__ARM_EABI_UNWINDER__) || defined(_LIBUNWIND_ARM_EHABI) ||         \
+    (defined(__arm__) && !(defined(__USING_SJLJ_EXCEPTIONS__) ||               \
+                           defined(__ARM_DWARF_EH__) || defined(__SEH__)))
+#define SCALANATIVE_ARM_EHABI 1
+extern _Unwind_Reason_Code __gnu_unwind_frame(_Unwind_Exception *,
+                                              struct _Unwind_Context *);
+#endif
+
 #if defined(__SCALANATIVE_DELIMCC)
 #include "delimcc.h"
 #include <setjmp.h>
@@ -260,10 +268,13 @@ _Unwind_Reason_Code set_landing_pad(struct _Unwind_Context *context,
 }
 
 // A personality function to catch all exceptions
-_Unwind_Reason_Code scalanative_personality(int version, _Unwind_Action actions,
-                                            uint64_t exception_class,
-                                            _Unwind_Exception *unwindException,
-                                            struct _Unwind_Context *context) {
+static _Unwind_Reason_Code
+scalanative_personality_impl(_Unwind_Action actions,
+                             _Unwind_Exception *unwindException,
+                             struct _Unwind_Context *context) {
+    if (_Unwind_GetLanguageSpecificData(context) == NULL) {
+        return _URC_CONTINUE_UNWIND;
+    }
     LSDA header;
     LSDA_init(&header, context);
     bool have_cleanup = false;
@@ -312,6 +323,54 @@ _Unwind_Reason_Code scalanative_personality(int version, _Unwind_Action actions,
     return _URC_CONTINUE_UNWIND;
 }
 
+#if defined(SCALANATIVE_ARM_EHABI)
+_Unwind_Reason_Code scalanative_personality(_Unwind_State state,
+                                            _Unwind_Exception *unwindException,
+                                            struct _Unwind_Context *context) {
+    // GCC's ARM EHABI unwinder (pr-support.c) caches function start and LSDA
+    // pointers in the UCB (unwindException) and expects virtual register r12
+    // in the context to point to the UCB when _Unwind_GetLanguageSpecificData
+    // and _Unwind_GetRegionStart are called.
+    _Unwind_SetGR(context, 12, (uintptr_t)unwindException);
+
+    _Unwind_Action actions;
+    switch (state & _US_ACTION_MASK) {
+    case _US_VIRTUAL_UNWIND_FRAME:
+        actions = _UA_SEARCH_PHASE;
+        break;
+    case _US_UNWIND_FRAME_STARTING:
+        actions = _UA_CLEANUP_PHASE;
+        if (state & _US_FORCE_UNWIND) {
+            actions |= _UA_FORCE_UNWIND;
+        }
+        break;
+    case _US_UNWIND_FRAME_RESUME:
+        if (__gnu_unwind_frame(unwindException, context) != _URC_OK) {
+            return _URC_FAILURE;
+        }
+        return _URC_CONTINUE_UNWIND;
+    default:
+        return _URC_FAILURE;
+    }
+
+    _Unwind_Reason_Code rc =
+        scalanative_personality_impl(actions, unwindException, context);
+    if (rc == _URC_CONTINUE_UNWIND) {
+        if (__gnu_unwind_frame(unwindException, context) != _URC_OK) {
+            return _URC_FAILURE;
+        }
+    }
+    return rc;
+}
+#else
+_Unwind_Reason_Code scalanative_personality(int version, _Unwind_Action actions,
+                                            uint64_t exception_class,
+                                            _Unwind_Exception *unwindException,
+                                            struct _Unwind_Context *context) {
+    return scalanative_personality_impl(actions, unwindException, context);
+}
+#endif
+
 Exception scalanative_catch(_Unwind_Exception *unwindException) {
     /* An exception can return from a blocking native call, bypassing its
      * normal managed-state restoration. Admit before invoking Scala hooks. */
@@ -344,6 +403,9 @@ scalanative_leave_managed_and_throw(scalanative_thread_scope_t scope,
     }
     wrapper->nativeAllocated = true;
     wrapper->unwindException.exception_cleanup = generic_exception_cleanup;
+#if defined(SCALANATIVE_ARM_EHABI)
+    wrapper->unwindException.unwinder_cache.reserved1 = 0;
+#endif
     scalanative_leave_managed(scope);
     _Unwind_RaiseException(&wrapper->unwindException);
     fprintf(stderr, "%s Unhandled exception escaping native callback\n",
@@ -361,6 +423,9 @@ __attribute__((noreturn)) void scalanative_throw(Exception obj) {
         generic_exception_cleanup;
     exceptionWrapper->obj = obj;
     _Unwind_Exception *unwindException = &exceptionWrapper->unwindException;
+#if defined(SCALANATIVE_ARM_EHABI)
+    unwindException->unwinder_cache.reserved1 = 0;
+#endif
     _Unwind_Reason_Code code = _Unwind_RaiseException(unwindException);
 
     if (code == _URC_END_OF_STACK) {
