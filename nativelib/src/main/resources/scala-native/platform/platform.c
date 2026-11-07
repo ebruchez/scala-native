@@ -1,7 +1,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#else
+#elif !defined(SCALANATIVE_FREESTANDING)
 #include <sys/utsname.h>
 #include <unistd.h>
 #endif
@@ -134,6 +134,8 @@ void scalanative_set_os_props(void (*add_prop)(const char *, const char *)) {
             add_prop("os.version", version);
         }
     }
+#elif defined(SCALANATIVE_FREESTANDING)
+    add_prop("os.name", "none");
 #else
     struct utsname name;
     if (uname(&name) == 0) {
@@ -151,6 +153,15 @@ void scalanative_set_os_props(void (*add_prop)(const char *, const char *)) {
 #elif defined(_M_ARM64)
     arch = "aarch64";
 #endif // Windows
+
+#elif defined(SCALANATIVE_FREESTANDING)
+#if defined(__aarch64__)
+    arch = "aarch64";
+#elif defined(__arm__) || defined(__thumb__)
+    arch = "arm";
+#elif defined(__riscv)
+    arch = "riscv";
+#endif
 
 #else // on Unix
     struct utsname buffer;
@@ -187,6 +198,11 @@ size_t scalanative_page_size() {
         SYSTEM_INFO sysInfo;
         GetSystemInfo(&sysInfo);
         pageSize = (size_t)sysInfo.dwPageSize;
+#elif defined(SCALANATIVE_FREESTANDING)
+#ifndef SCALANATIVE_PAGE_SIZE
+#define SCALANATIVE_PAGE_SIZE 256
+#endif
+        pageSize = (size_t)SCALANATIVE_PAGE_SIZE;
 #else
         pageSize = (size_t)sysconf(_SC_PAGE_SIZE);
 #endif

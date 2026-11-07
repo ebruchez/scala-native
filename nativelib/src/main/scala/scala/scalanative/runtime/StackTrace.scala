@@ -11,6 +11,9 @@ import scala.scalanative.unsigned._
 
 private[runtime] object StackTrace {
   @noinline def stackTraceIterator(): Iterator[StackTraceElement] = {
+    if (LinktimeInfo.isFreeStanding)
+      return Iterator.empty
+
     new Iterator[StackTraceElement] {
       val tlContext = ThreadLocalContext.get()
       implicit val localContext: Context = tlContext
@@ -41,6 +44,9 @@ private[runtime] object StackTrace {
   @noinline private[runtime] def currentRawStackTrace()
       : scala.Array[InstructionPointer] = {
     def emptyStackTrace = scala.Array.emptyLongArray
+
+    if (LinktimeInfo.isFreeStanding)
+      return emptyStackTrace
 
     val thread = NativeThread.currentNativeThread
     if (null eq thread)
@@ -88,6 +94,8 @@ private[runtime] object StackTrace {
   ): scala.Array[StackTraceElement] = {
     def emptyStackTrace = scala.Array.emptyObjectArray
       .asInstanceOf[scala.Array[StackTraceElement]]
+    if (LinktimeInfo.isFreeStanding)
+      return emptyStackTrace
     if (raw.isEmpty)
       return emptyStackTrace
 
@@ -129,6 +137,8 @@ private[runtime] object StackTrace {
   @noinline def currentStackTrace(): scala.Array[StackTraceElement] = {
     def emptyStackTrace = scala.Array.emptyObjectArray
       .asInstanceOf[scala.Array[StackTraceElement]]
+    if (LinktimeInfo.isFreeStanding)
+      return emptyStackTrace
     // Used to prevent filling stacktraces inside `currentStackTrace` which might lead to infinite loop
     val thread = NativeThread.currentNativeThread
     if (null eq thread)

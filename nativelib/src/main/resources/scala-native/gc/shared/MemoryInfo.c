@@ -14,6 +14,18 @@
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#elif defined(SCALANATIVE_FREESTANDING)
+#include <stddef.h>
+#include <stdint.h>
+#ifndef SCALANATIVE_DEFAULT_HEAP_SIZE
+#define SCALANATIVE_DEFAULT_HEAP_SIZE (64 * 1024)
+#endif
+#ifndef SCALANATIVE_PAGE_SIZE
+#define SCALANATIVE_PAGE_SIZE 256
+#endif
+__attribute__((weak)) size_t __scalanative_memory_size(void) {
+    return (size_t)SCALANATIVE_DEFAULT_HEAP_SIZE;
+}
 #elif defined(__unix__) || defined(__unix) || defined(unix) ||                 \
     (defined(__APPLE__) && defined(__MACH__))
 #include <unistd.h>
@@ -46,6 +58,9 @@ size_t getMemorySize(void) {
     status.dwLength = sizeof(status);
     GlobalMemoryStatusEx(&status);
     return (size_t)status.ullTotalPhys;
+
+#elif defined(SCALANATIVE_FREESTANDING)
+    return __scalanative_memory_size();
 
 #elif defined(__unix__) || defined(__unix) || defined(unix) ||                 \
     (defined(__APPLE__) && defined(__MACH__))
@@ -122,6 +137,9 @@ size_t getFreeMemorySize(void) {
     GlobalMemoryStatusEx(&status);
     return (size_t)status.ullAvailPhys;
 
+#elif defined(SCALANATIVE_FREESTANDING)
+    return __scalanative_memory_size();
+
 #elif defined(__FreeBSD__)
     /* FreeBSD uses a different paging model. It documents that it tries
      * to keep the number of free pages low; basically zero plus a few
@@ -166,6 +184,8 @@ uintptr_t getPageSize(void) {
     SYSTEM_INFO si;
     GetSystemInfo(&si);
     cached = (uintptr_t)si.dwPageSize;
+#elif defined(SCALANATIVE_FREESTANDING)
+    cached = (uintptr_t)SCALANATIVE_PAGE_SIZE;
 #else
     long ps = sysconf(_SC_PAGESIZE);
     cached = (ps > 0) ? (uintptr_t)ps : (uintptr_t)4096;

@@ -8,6 +8,7 @@
 #include "unwind.h"
 #include "externalThreads.h"
 #include "externalThreadGC.h"
+#include "gc/shared/ThreadUtil.h"
 #include <stddef.h>
 
 #if defined(__SCALANATIVE_DELIMCC)
@@ -42,7 +43,7 @@ typedef struct ExceptionWrapper {
     _Unwind_Exception unwindException;
 } ExceptionWrapper;
 
-static _Thread_local ExceptionWrapper fallbackExceptionWrapper;
+static SN_ThreadLocal ExceptionWrapper fallbackExceptionWrapper;
 
 extern OnCatchHandler scalanative_Throwable_onCatchHandler(Exception exception);
 extern void scalanative_Throwable_showStackTrace(Exception exception);
@@ -168,7 +169,7 @@ void LSDA_call_site_init(LSDA_call_site *callSite, LSDA_ptr *lsda,
 }
 
 bool LSDA_call_site_valid_for_throw_ip(const LSDA_call_site *callSite,
-                                       _Unwind_Context *context) {
+                                       struct _Unwind_Context *context) {
     uintptr_t func_start = _Unwind_GetRegionStart(context);
     uintptr_t try_start = func_start + callSite->start;
     uintptr_t try_end = try_start + callSite->len;
@@ -194,7 +195,7 @@ typedef struct LSDA {
     const int *types_table_start;
 } LSDA;
 
-void LSDA_init(LSDA *lsda, _Unwind_Context *context) {
+void LSDA_init(LSDA *lsda, struct _Unwind_Context *context) {
     lsda->lsda = (uint8_t *)_Unwind_GetLanguageSpecificData(context);
     lsda->start_encoding = lsda->lsda[0];
     lsda->type_encoding = lsda->lsda[1];
@@ -244,7 +245,7 @@ Action *LSDA_get_next_action(LSDA *lsda) {
     return &lsda->current_action;
 }
 
-_Unwind_Reason_Code set_landing_pad(_Unwind_Context *context,
+_Unwind_Reason_Code set_landing_pad(struct _Unwind_Context *context,
                                     _Unwind_Exception *unwindException,
                                     uintptr_t landing_pad, uint8_t type_index) {
     int r0 = __builtin_eh_return_data_regno(0);
@@ -262,7 +263,7 @@ _Unwind_Reason_Code set_landing_pad(_Unwind_Context *context,
 _Unwind_Reason_Code scalanative_personality(int version, _Unwind_Action actions,
                                             uint64_t exception_class,
                                             _Unwind_Exception *unwindException,
-                                            _Unwind_Context *context) {
+                                            struct _Unwind_Context *context) {
     LSDA header;
     LSDA_init(&header, context);
     bool have_cleanup = false;

@@ -8,6 +8,11 @@ bool thread_create(thread_t *ref, routine_fn routine, void *data) {
     *ref =
         CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)routine, data, 0, NULL);
     return *ref != NULL;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    (void)routine;
+    (void)data;
+    return false;
 #else
     return pthread_create(ref, NULL, routine, data) == 0;
 #endif
@@ -16,12 +21,14 @@ bool thread_create(thread_t *ref, routine_fn routine, void *data) {
 INLINE thread_id thread_getid() {
 #ifdef _WIN32
     return GetCurrentThreadId();
+#elif defined(SCALANATIVE_FREESTANDING)
+    return 0;
 #else
     return pthread_self();
 #endif
 }
 INLINE bool thread_equals(thread_id l, thread_id r) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(SCALANATIVE_FREESTANDING)
     return l == r;
 #else
     return pthread_equal(l, r);
@@ -32,6 +39,8 @@ INLINE
 void thread_yield() {
 #ifdef _WIN32
     SwitchToThread();
+#elif defined(SCALANATIVE_FREESTANDING)
+    // noop
 #else
     sched_yield();
 #endif
@@ -41,6 +50,8 @@ INLINE
 pid_t process_getid() {
 #ifdef _WIN32
     return (pid_t)GetCurrentProcessId();
+#elif defined(SCALANATIVE_FREESTANDING)
+    return 0;
 #else
     return (pid_t)getpid();
 #endif
@@ -51,6 +62,9 @@ bool mutex_init(mutex_t *ref) {
 #ifdef _WIN32
     *ref = CreateMutex(NULL, FALSE, NULL);
     return *ref != NULL;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
@@ -63,6 +77,9 @@ INLINE
 bool mutex_lock(mutex_t *ref) {
 #ifdef _WIN32
     return WaitForSingleObject(*ref, INFINITE) == WAIT_OBJECT_0;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return pthread_mutex_lock(ref) == 0;
 #endif
@@ -72,6 +89,9 @@ INLINE
 bool mutex_tryLock(mutex_t *ref) {
 #ifdef _WIN32
     return WaitForSingleObject(*ref, 0) == WAIT_OBJECT_0;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return pthread_mutex_trylock(ref) == 0;
 #endif
@@ -81,6 +101,9 @@ INLINE
 bool mutex_unlock(mutex_t *ref) {
 #ifdef _WIN32
     return ReleaseMutex(*ref);
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return pthread_mutex_unlock(ref) == 0;
 #endif
@@ -92,6 +115,11 @@ bool semaphore_open(semaphore_t *ref, char *name, unsigned int initValue) {
     HANDLE sem = CreateSemaphore(NULL, initValue, LONG_MAX, NULL);
     *ref = sem;
     return sem != NULL;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    (void)name;
+    (void)initValue;
+    return true;
 #else
     sem_t *sem = sem_open(name, O_CREAT | O_EXCL, 0644, initValue);
     *ref = sem;
@@ -103,6 +131,9 @@ INLINE
 bool semaphore_wait(semaphore_t ref) {
 #ifdef _WIN32
     return WaitForSingleObject(ref, INFINITE) == WAIT_OBJECT_0;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return sem_wait(ref) == 0;
 #endif
@@ -112,6 +143,9 @@ INLINE
 bool semaphore_unlock(semaphore_t ref) {
 #ifdef _WIN32
     return ReleaseSemaphore(ref, 1, NULL);
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return sem_post(ref) == 0;
 #endif
@@ -120,6 +154,9 @@ bool semaphore_unlock(semaphore_t ref) {
 bool rwlock_init(rwlock_t *ref) {
 #ifdef _WIN32
     InitializeSRWLock(ref);
+    return true;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
     return true;
 #else
     return pthread_rwlock_init(ref, NULL) == 0;
@@ -130,6 +167,9 @@ bool rwlock_lockRead(rwlock_t *ref) {
 #ifdef _WIN32
     AcquireSRWLockShared(ref);
     return true;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return pthread_rwlock_rdlock(ref) == 0;
 #endif
@@ -137,6 +177,9 @@ bool rwlock_lockRead(rwlock_t *ref) {
 bool rwlock_tryLockRead(rwlock_t *ref) {
 #ifdef _WIN32
     return TryAcquireSRWLockShared(ref) != 0;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return pthread_rwlock_tryrdlock(ref) == 0;
 #endif
@@ -144,6 +187,9 @@ bool rwlock_tryLockRead(rwlock_t *ref) {
 bool rwlock_lockWrite(rwlock_t *ref) {
 #ifdef _WIN32
     AcquireSRWLockExclusive(ref);
+    return true;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
     return true;
 #else
     return pthread_rwlock_wrlock(ref) == 0;
@@ -154,6 +200,9 @@ bool rwlock_unlockWrite(rwlock_t *ref) {
 #ifdef _WIN32
     ReleaseSRWLockExclusive(ref);
     return true;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
+    return true;
 #else
     return pthread_rwlock_unlock(ref) == 0;
 #endif
@@ -162,6 +211,9 @@ bool rwlock_unlockWrite(rwlock_t *ref) {
 bool rwlock_unlockRead(rwlock_t *ref) {
 #ifdef _WIN32
     ReleaseSRWLockShared(ref);
+    return true;
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)ref;
     return true;
 #else
     return pthread_rwlock_unlock(ref) == 0;

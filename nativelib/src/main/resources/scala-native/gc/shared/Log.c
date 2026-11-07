@@ -22,7 +22,7 @@
 #include <process.h>
 #define strcasecmp _stricmp
 #define getpid _getpid
-#else
+#elif !defined(SCALANATIVE_FREESTANDING)
 #include <strings.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -39,13 +39,21 @@ extern char *program_invocation_short_name;
 // Whether to include timestamps in log messages (enabled by default)
 // Set to 0 to disable timestamps at compile time
 #ifndef GC_LOG_SHOW_TIME
+#ifdef SCALANATIVE_FREESTANDING
+#define GC_LOG_SHOW_TIME 0
+#else
 #define GC_LOG_SHOW_TIME 1
+#endif
 #endif
 
 // Whether to include process ID in log messages (enabled by default)
 // Set to 0 to disable PID at compile time
 #ifndef GC_LOG_SHOW_PID
+#ifdef SCALANATIVE_FREESTANDING
+#define GC_LOG_SHOW_PID 0
+#else
 #define GC_LOG_SHOW_PID 1
+#endif
 #endif
 
 #if GC_LOG_SHOW_PID
@@ -86,7 +94,9 @@ void GC_Log_Init(void) {
 
     // Default output to stderr
     GC_logOutput = stderr;
+    GC_logLevel = GC_LOG_LEVEL_WARN;
 
+#ifndef SCALANATIVE_FREESTANDING
     // Check for log file redirection
     char *fileEnv = getenv("GC_LOG_FILE");
     if (fileEnv != NULL && fileEnv[0] != '\0') {
@@ -100,9 +110,6 @@ void GC_Log_Init(void) {
                     fileEnv);
         }
     }
-
-    // Default level
-    GC_logLevel = GC_LOG_LEVEL_WARN;
 
     char *levelEnv = getenv("SCALANATIVE_GC_LOG_LEVEL");
     if (levelEnv != NULL) {
@@ -118,6 +125,7 @@ void GC_Log_Init(void) {
             GC_logLevel = GC_LOG_LEVEL_NONE;
         }
     }
+#endif
 }
 
 GC_LogLevel GC_Log_GetLevel(void) { return GC_logLevel; }
@@ -135,7 +143,11 @@ void GC_Log_Write(GC_LogLevel level, const char *prefix, const char *format,
 
     // Build complete message in buffer to avoid interleaved output from
     // multiple threads
+#ifdef SCALANATIVE_FREESTANDING
+    char buffer[128];
+#else
     char buffer[1024];
+#endif
     int offset = 0;
     int remaining = sizeof(buffer) - 1;
     int written;

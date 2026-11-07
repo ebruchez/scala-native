@@ -1,13 +1,16 @@
 // MemoryMap.c is used by all GCs and Zone
 
 #include "shared/MemoryMap.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include "shared/Log.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 
-#else // Unix
+#elif !defined(SCALANATIVE_FREESTANDING) // Unix
 #include <sys/mman.h>
 // Darwin defines MAP_ANON instead of MAP_ANONYMOUS
 #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
@@ -43,6 +46,8 @@ word_t *memoryMap(size_t memorySize) {
     // We don't use MAP_PHYSICAL flag to prevent usage of swap file, since it
     // supports only 32-bit address space and is in most cases not recommended.
     return VirtualAlloc(NULL, memorySize, MEM_RESERVE, PAGE_NOACCESS);
+#elif defined(SCALANATIVE_FREESTANDING)
+    return (word_t *)malloc(memorySize);
 #else // Unix
     word_t *addr = mmap(NULL, memorySize, HEAP_MEM_PROT, HEAP_MEM_FLAGS,
                         HEAP_MEM_FD, HEAP_MEM_FD_OFFSET);
@@ -55,14 +60,19 @@ word_t *memoryMap(size_t memorySize) {
 int memoryUnmap(void *address, size_t memorySize) {
 #ifdef _WIN32
     return VirtualFree(address, memorySize, MEM_RELEASE);
+#elif defined(SCALANATIVE_FREESTANDING)
+    (void)memorySize;
+    free(address);
+    return 0;
 #else // Unix
     return munmap(address, memorySize);
 #endif
 }
 
 word_t *memoryMapPrealloc(size_t memorySize, size_t doPrealloc) {
-#ifdef _WIN32
-    // No special pre-alloc support on Windows is needed
+#if defined(_WIN32) || defined(SCALANATIVE_FREESTANDING)
+    // No special pre-alloc support on Windows or freestanding targets is needed
+    (void)doPrealloc;
     return memoryMap(memorySize);
 #else // Unix
     if (!doPrealloc) {
@@ -91,10 +101,6 @@ bool memoryCommit(void *ref, size_t memorySize) {
     return true;
 #endif
 }
-
-#include <stdio.h>
-#include <stdlib.h>
-#include "shared/Log.h"
 
 static void exitWithOutOfMemory() {
     GC_LOG_ERROR("Out of heap space");

@@ -33,6 +33,8 @@ long long Time_current_millis(void) {
 #if defined(_WIN32)
     // GetTickCount64 returns monotonic time in milliseconds
     return (long long)GetTickCount64();
+#elif defined(SCALANATIVE_FREESTANDING)
+    return 0;
 #else
     // Use CLOCK_MONOTONIC for elapsed time measurement
     struct timespec ts = {};
@@ -57,7 +59,7 @@ long long Time_current_nanos(void) {
             nano_time = count.QuadPart * nanosPerCount;
         }
     }
-#else
+#elif !defined(SCALANATIVE_FREESTANDING)
 #if defined(__FreeBSD__)
     int clock = CLOCK_MONOTONIC_PRECISE; // OS has no CLOCK_MONOTONIC_RAW
 #elif defined(__OpenBSD__) || defined(__NetBSD__)

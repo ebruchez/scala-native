@@ -63,6 +63,13 @@ bool scalanative_detectExternalThreadStack(ThreadInfo *info) {
     if ((uintptr_t)high < size)
         return false;
     low = (void *)((uintptr_t)high - size);
+#elif defined(SCALANATIVE_FREESTANDING)
+    size = scalanative_mainThreadMaxStackSize();
+    high = (void *)(((uintptr_t)onStack + 256) & ~(uintptr_t)255);
+    if ((uintptr_t)high <= size)
+        low = (void *)1;
+    else
+        low = (void *)((uintptr_t)high - size);
 #else
     return false;
 #endif

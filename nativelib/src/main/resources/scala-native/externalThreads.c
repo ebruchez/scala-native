@@ -29,7 +29,12 @@ static ExternalThread *allocateRecord(void) {
 static void freeRecord(ExternalThread *record) { free(record); }
 
 enum { RuntimeUninitialized, RuntimeInitializing, RuntimeReady, RuntimeFailed };
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+static int runtimeState;
+#else
 static atomic_int runtimeState;
+#endif
 
 static void onThreadExit(void *raw);
 void scalanative_threads_init_failed(void);
@@ -53,6 +58,14 @@ static ExternalThread *currentRecord(void) {
 }
 static bool setRecord(ExternalThread *record) {
     return FlsSetValue(storageKey, record) != 0;
+}
+#elif defined(SCALANATIVE_FREESTANDING)
+static ExternalThread *singleRecord = NULL;
+static bool initializeStorage(void) { return true; }
+static ExternalThread *currentRecord(void) { return singleRecord; }
+static bool setRecord(ExternalThread *record) {
+    singleRecord = record;
+    return true;
 }
 #else
 static pthread_once_t storageOnce = PTHREAD_ONCE_INIT;
@@ -98,6 +111,11 @@ static bool waitOwnership(void) {
 static void notifyOwnership(void) {
     WakeAllConditionVariable(&ownershipChanged);
 }
+#elif defined(SCALANATIVE_FREESTANDING)
+static void lockOwnership(void) {}
+static void unlockOwnership(void) {}
+static bool waitOwnership(void) { return false; }
+static void notifyOwnership(void) {}
 #else
 static pthread_mutex_t ownershipLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t ownershipChanged = PTHREAD_COND_INITIALIZER;
@@ -116,13 +134,21 @@ static void notifyOwnership(void) { pthread_cond_broadcast(&ownershipChanged); }
 #endif
 static ExternalThread *owner;
 #endif
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+static ExternalThread *retired;
+#else
 static _Atomic(ExternalThread *) retired;
+#endif
 
 #ifdef SCALANATIVE_MULTITHREADING_ENABLED
 #ifdef _WIN32
 static SRWLOCK adoptLock = SRWLOCK_INIT;
 static void lockAdopt(void) { AcquireSRWLockExclusive(&adoptLock); }
 static void unlockAdopt(void) { ReleaseSRWLockExclusive(&adoptLock); }
+#elif defined(SCALANATIVE_FREESTANDING)
+static void lockAdopt(void) {}
+static void unlockAdopt(void) {}
 #else
 static pthread_mutex_t adoptLock = PTHREAD_MUTEX_INITIALIZER;
 static void lockAdopt(void) {
@@ -137,6 +163,11 @@ static void unlockAdopt(void) {
 #endif
 
 static void retireIdentity(ExternalThread *record) {
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    record->next = retired;
+    retired = record;
+#else
     ExternalThread *pending =
         atomic_load_explicit(&retired, memory_order_relaxed);
     do {
@@ -144,6 +175,7 @@ static void retireIdentity(ExternalThread *record) {
     } while (!atomic_compare_exchange_weak_explicit(&retired, &pending, record,
                                                     memory_order_release,
                                                     memory_order_relaxed));
+#endif
 }
 
 static int acquireOwnership(ExternalThread *record) {
@@ -186,8 +218,14 @@ static void disposeIdentity(ExternalThread *record) {
 }
 
 static void drainRetired(void) {
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    ExternalThread *pending = retired;
+    retired = NULL;
+#else
     ExternalThread *pending =
         atomic_exchange_explicit(&retired, NULL, memory_order_acquire);
+#endif
     while (pending != NULL) {
         ExternalThread *next = pending->next;
         disposeIdentity(pending);
@@ -311,9 +349,15 @@ failure:
 }
 
 static int attach(ExternalThread **result) {
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    if (runtimeState != RuntimeReady)
+        return SCALANATIVE_THREAD_NOT_INITIALIZED;
+#else
     if (atomic_load_explicit(&runtimeState, memory_order_acquire) !=
         RuntimeReady)
         return SCALANATIVE_THREAD_NOT_INITIALIZED;
+#endif
     ExternalThread *record;
     int status = ensureRecord(&record);
     if (status != SCALANATIVE_THREAD_SUCCESS)
@@ -451,10 +495,17 @@ static void onThreadExit(void *raw) {
 
 /* Called by generated bootstrap code, not by a host. */
 int scalanative_threads_init_begin(bool library) {
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    if (runtimeState != RuntimeUninitialized)
+        return SCALANATIVE_THREAD_INVALID_OPERATION;
+    runtimeState = RuntimeInitializing;
+#else
     int expected = RuntimeUninitialized;
     if (!atomic_compare_exchange_strong(&runtimeState, &expected,
                                         RuntimeInitializing))
         return SCALANATIVE_THREAD_INVALID_OPERATION;
+#endif
     ExternalThread *record = NULL;
     bool stored = false;
     if (!initializeStorage())
@@ -482,14 +533,25 @@ failure:
         clearRecord();
     freeRecord(record);
     currentThreadInfo.isInitialized = false;
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    runtimeState = RuntimeFailed;
+#else
     atomic_store_explicit(&runtimeState, RuntimeFailed, memory_order_release);
+#endif
     return SCALANATIVE_THREAD_RESOURCE_FAILURE;
 }
 
 int scalanative_threads_init_complete(bool library) {
     ExternalThread *record = currentRecord();
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    if (record == NULL || runtimeState != RuntimeInitializing)
+        return 1;
+#else
     if (record == NULL || atomic_load(&runtimeState) != RuntimeInitializing)
         return 1;
+#endif
     if (library) {
         record->info = currentThreadInfo;
         /* Keep identities in the captured stack until the persistent roots
@@ -511,13 +573,24 @@ int scalanative_threads_init_complete(bool library) {
         record->rooted = true;
         unbind(record);
     }
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    runtimeState = RuntimeReady;
+#else
     atomic_store_explicit(&runtimeState, RuntimeReady, memory_order_release);
+#endif
     return 0;
 }
 
 void scalanative_threads_init_failed(void) {
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    int previous = runtimeState;
+    runtimeState = RuntimeFailed;
+#else
     int previous = atomic_exchange_explicit(&runtimeState, RuntimeFailed,
                                             memory_order_acq_rel);
+#endif
     if (previous != RuntimeInitializing)
         return;
     ExternalThread *record = currentRecord();

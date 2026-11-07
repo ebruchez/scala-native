@@ -10,7 +10,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#else
+#elif !defined(SCALANATIVE_FREESTANDING)
 #include <unistd.h>
 #endif
 

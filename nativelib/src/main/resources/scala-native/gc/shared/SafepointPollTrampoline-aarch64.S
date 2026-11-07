@@ -87,7 +87,11 @@ scalanative_gc_safepoint_poll_trampoline:
 .balign 4
 .globl scalanative_gc_safepoint_trampoline_aarch64_skipped
 scalanative_gc_safepoint_trampoline_aarch64_skipped:
+#if defined(__arm__) || defined(__thumb__)
+    bx lr
+#else
     ret
+#endif
 #endif
 
 #if defined(__linux__) && defined(__ELF__)

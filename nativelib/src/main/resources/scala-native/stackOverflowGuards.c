@@ -2,7 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <malloc.h>
-#else // Unix
+#elif !defined(SCALANATIVE_FREESTANDING) // Unix
 #include <sys/resource.h>
 #include <sys/mman.h>
 #include <signal.h>
@@ -71,6 +71,12 @@ void scalanative_StackOverflowGuards_reset() {
         return; // still unwinding
     _resetstkoflw();
 }
+
+#elif defined(SCALANATIVE_FREESTANDING)
+void scalanative_StackOverflowGuards_setup(bool isMainThread) {
+    (void)isMainThread;
+}
+void scalanative_StackOverflowGuards_reset() {}
 
 #else // Unix
 static struct sigaction *resolvePreviousSignalHandler(int sig) {
@@ -355,7 +361,7 @@ void scalanative_StackOverflowGuards_check() {
 }
 
 void scalanative_StackOverflowGuards_close() {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(SCALANATIVE_FREESTANDING)
 // noop
 #else
     unprotectStackGuardPage();

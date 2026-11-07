@@ -1,5 +1,6 @@
-#if defined(SCALANATIVE_GC_IMMIX) || defined(SCALANATIVE_GC_COMMIX) ||         \
-    defined(SCALANATIVE_GC_NONE) || defined(SCALANATIVE_GC_EXPERIMENTAL)
+#if !defined(SCALANATIVE_FREESTANDING) &&                                      \
+    (defined(SCALANATIVE_GC_IMMIX) || defined(SCALANATIVE_GC_COMMIX) ||        \
+     defined(SCALANATIVE_GC_NONE) || defined(SCALANATIVE_GC_EXPERIMENTAL))
 
 // Disable MSVC deprecation warnings for standard C functions
 #ifdef _WIN32

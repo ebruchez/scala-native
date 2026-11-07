@@ -1,6 +1,6 @@
 package scala.scalanative.unsafe
 
-import scala.scalanative.meta.LinktimeInfo.asanEnabled
+import scala.scalanative.meta.LinktimeInfo.{asanEnabled, isFreeStanding}
 import scala.scalanative.runtime.{Intrinsics, RawPtr, ffi, fromRawPtr}
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
@@ -23,7 +23,8 @@ private[unsafe] final class MemoryPool private {
 
   /** Allocate a chunk of memory from system allocator. */
   private def allocateChunk(): Unit = {
-    if (chunkPageCount < MemoryPool.MAX_PAGE_COUNT) {
+    val canGrow = if (isFreeStanding) chunk != null else true
+    if (canGrow && chunkPageCount < MemoryPool.MAX_PAGE_COUNT) {
       chunkPageCount *= 2.toUSize
     }
     val chunkSize = MemoryPool.PAGE_SIZE * chunkPageCount
@@ -65,9 +66,12 @@ private[unsafe] final class MemoryPool private {
     }
 }
 private[unsafe] object MemoryPool {
-  final val PAGE_SIZE = 4096.toUSize
-  final val MIN_PAGE_COUNT = 4.toUSize
-  final val MAX_PAGE_COUNT = 256.toUSize
+  @inline def PAGE_SIZE: USize =
+    if (isFreeStanding) 256.toUSize else 4096.toUSize
+  @inline def MIN_PAGE_COUNT: USize =
+    if (isFreeStanding) 1.toUSize else 4.toUSize
+  @inline def MAX_PAGE_COUNT: USize =
+    if (isFreeStanding) 16.toUSize else 256.toUSize
 
   lazy val defaultMemoryPool: MemoryPool = {
     // Release allocated chunks satisfy AdressSanitizer

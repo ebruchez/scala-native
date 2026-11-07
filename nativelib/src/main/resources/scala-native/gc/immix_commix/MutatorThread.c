@@ -9,7 +9,7 @@
 #include "shared/Log.h"
 #include <assert.h>
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(SCALANATIVE_FREESTANDING)
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
@@ -71,7 +71,7 @@ bool MutatorThread_register(Field_t *stackbottom) {
 #endif // SCALANATIVE_GC_USE_YIELDPOINT_TRAPS
 #else
     // Always store thread identifier for liveness checking
-    self->thread = pthread_self();
+    self->thread = thread_getid();
 #ifdef __linux__
     self->kernelThreadId = (pid_t)syscall(SYS_gettid);
 #endif
@@ -128,7 +128,7 @@ bool MutatorThread_rebind(word_t **stackBottom, ThreadInfo *info) {
         CloseHandle(self->threadHandle);
     self->threadHandle = handle;
 #else
-    self->thread = pthread_self();
+    self->thread = thread_getid();
 #ifdef __linux__
     self->kernelThreadId = (pid_t)syscall(SYS_gettid);
 #endif
@@ -227,6 +227,8 @@ bool MutatorThread_hasTerminated(MutatorThread *thread) {
     // A detached thread's pthread_t may be freed; probe its kernel id instead.
     return syscall(SYS_tgkill, getpid(), thread->kernelThreadId, 0) == -1 &&
            errno == ESRCH;
+#elif defined(SCALANATIVE_FREESTANDING)
+    return false;
 #else
     return pthread_kill(thread->thread, 0) == ESRCH;
 #endif

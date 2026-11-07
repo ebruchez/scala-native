@@ -1,7 +1,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#else // Unix
+#elif !defined(SCALANATIVE_FREESTANDING) // Unix
 #include <pthread.h>
 #include <sys/resource.h>
 #ifdef __FreeBSD__
@@ -40,6 +40,11 @@ size_t scalanative_mainThreadMaxStackSize() {
         MEMORY_BASIC_INFORMATION mbi;
         VirtualQuery(&mbi, &mbi, sizeof(mbi));
         computed = (size_t)mbi.RegionSize;
+#elif defined(SCALANATIVE_FREESTANDING)
+#ifndef SCALANATIVE_STACK_SIZE
+#define SCALANATIVE_STACK_SIZE 2048
+#endif
+        computed = (size_t)SCALANATIVE_STACK_SIZE;
 #else
         struct rlimit rl;
         if (getrlimit(RLIMIT_STACK, &rl) == 0) {

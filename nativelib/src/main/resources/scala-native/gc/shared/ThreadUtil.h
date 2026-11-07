@@ -7,7 +7,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#else
+#elif !defined(SCALANATIVE_FREESTANDING)
 #include <pthread.h>
 #include <semaphore.h>
 #include <sched.h>
@@ -38,6 +38,13 @@ typedef DWORD thread_id;
 typedef HANDLE mutex_t;
 typedef HANDLE semaphore_t;
 typedef SRWLOCK rwlock_t;
+typedef int pid_t;
+#elif defined(SCALANATIVE_FREESTANDING)
+typedef uintptr_t thread_t;
+typedef uintptr_t thread_id;
+typedef uintptr_t mutex_t;
+typedef uintptr_t rwlock_t;
+typedef uintptr_t semaphore_t;
 typedef int pid_t;
 #else
 typedef pthread_t thread_t;

@@ -34,7 +34,11 @@ static SN_ThreadLocal bool externalRegistered;
 static SN_ThreadLocal GC_MutatorThreadState executionState =
     GC_MutatorThreadState_Managed;
 
+#ifdef SCALANATIVE_FREESTANDING
+#define EMERGENCY_BLOCK_SIZE 512
+#else
 #define EMERGENCY_BLOCK_SIZE (32 * 1024)
+#endif
 
 extern void *scalanative_createOutOfMemoryError(void);
 __attribute__((noreturn)) extern void scalanative_throw(void *obj);
@@ -49,7 +53,12 @@ static size_t DO_PREALLOC = 0L;     // No Preallocation.
 static size_t TOTAL_ALLOCATED = 0L; // Track total allocated memory
 static void *emergencyBlock;
 static void *emergencyEnd;
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+static bool emergencyBlockClaimed = false;
+#else
 static atomic_bool emergencyBlockClaimed = false;
+#endif
 
 static void exitWithOutOfMemory() {
     GC_LOG_ERROR("Out of heap space");
@@ -73,8 +82,15 @@ static bool initEmergencyBlock() {
 }
 
 static void throwOutOfMemory() {
+#if defined(SCALANATIVE_FREESTANDING) &&                                       \
+    !defined(SCALANATIVE_MULTITHREADING_ENABLED)
+    bool claimed = emergencyBlockClaimed;
+    emergencyBlockClaimed = true;
+    if (emergencyBlock == NULL || claimed) {
+#else
     if (emergencyBlock == NULL ||
         atomic_exchange(&emergencyBlockClaimed, true)) {
+#endif
         scalanative_throwOutOfMemoryErrorFallback();
     }
 
@@ -104,7 +120,10 @@ void Prealloc_Or_Default() {
                                 // or execute default mmap settings
         size_t memorySize = getMemorySize();
 
-#if defined(SCALANATIVE_MULTITHREADING_ENABLED)
+#if defined(SCALANATIVE_FREESTANDING)
+        DEFAULT_CHUNK = memorySize;
+        PREALLOC_CHUNK = 0L;
+#elif defined(SCALANATIVE_MULTITHREADING_ENABLED)
         // Every starting thread would want to allocate chunk of memory.
         // We want to limit their size to prevent OOM errors.
         DEFAULT_CHUNK =
@@ -219,7 +238,7 @@ HANDLE scalanative_GC_CreateThread(LPSECURITY_ATTRIBUTES threadAttributes,
     return CreateThread(threadAttributes, stackSize, routine, args,
                         creationFlags, threadId);
 }
-#else
+#elif !defined(SCALANATIVE_FREESTANDING)
 int scalanative_GC_pthread_create(pthread_t *thread, pthread_attr_t *attr,
                                   ThreadStartRoutine routine,
                                   RoutineArgs args) {

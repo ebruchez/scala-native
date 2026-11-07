@@ -208,4 +208,6 @@ extern EXCEPTION_DISPOSITION _GCC_specific_handler(EXCEPTION_RECORD *exc,
 #endif
 
 #endif // __UNWIND_H__
+#elif __has_include_next(<unwind.h>)
+#include_next <unwind.h>
 #endif
