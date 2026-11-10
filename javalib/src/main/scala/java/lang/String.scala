@@ -14,6 +14,7 @@ import java.{lang => jl}
 import scala.annotation.{switch, tailrec}
 
 import scalanative.libc.string.memcmp
+import scalanative.meta.LinktimeInfo.{is32BitPlatform, isFreeStanding}
 import scalanative.runtime.{Intrinsics, toRawPtr}
 import scalanative.unsafe._
 import scalanative.unsigned._
@@ -359,17 +360,20 @@ final class _String()
           val srcRaw = toRawPtr(value.at(offset + start))
           val dstRaw = toRawPtr(data.at(_index))
           var i = 0
-          // Process 4 chars (8 bytes) at a time using Long loads.
-          // Extract the low byte of each char and pack into a single Int.
-          while (i + 4 <= len) {
-            val long =
-              Intrinsics.loadLong(Intrinsics.elemRawPtr(srcRaw, i * 2))
-            val packed = ((long & 0xffL) |
-              ((long >> 8) & 0xff00L) |
-              ((long >> 16) & 0xff0000L) |
-              ((long >> 24) & 0xff000000L)).toInt
-            Intrinsics.storeInt(Intrinsics.elemRawPtr(dstRaw, i), packed)
-            i += 4
+          // Process 4 chars (8 bytes) at a time using Long loads on 64-bit targets.
+          // On 32-bit / freestanding targets (e.g. ARMv6-M Cortex-M0+), (offset + start)
+          // or _index may be unaligned, which faults on 32/64-bit loads/stores.
+          if (!is32BitPlatform && !isFreeStanding) {
+            while (i + 4 <= len) {
+              val long =
+                Intrinsics.loadLong(Intrinsics.elemRawPtr(srcRaw, i * 2))
+              val packed = ((long & 0xffL) |
+                ((long >> 8) & 0xff00L) |
+                ((long >> 16) & 0xff0000L) |
+                ((long >> 24) & 0xff000000L)).toInt
+              Intrinsics.storeInt(Intrinsics.elemRawPtr(dstRaw, i), packed)
+              i += 4
+            }
           }
           while (i < len) {
             val ch =
@@ -472,28 +476,31 @@ final class _String()
     if (ch >= 0 && ch <= Character.MAX_VALUE) {
       val len = endIndex - start
       if (len > 0) {
-        // SWAR (SIMD Within A Register) search for BMP chars.
-        // Process 4 chars (8 bytes) at a time using Long loads.
-        val charMask =
-          ch.toLong | (ch.toLong << 16) | (ch.toLong << 32) | (ch.toLong << 48)
-        val srcRaw = toRawPtr(value.at(offset + start))
         var i = 0
-        while (i + 4 <= len) {
-          val long =
-            Intrinsics.loadLong(Intrinsics.elemRawPtr(srcRaw, i * 2))
-          val xored = long ^ charMask
-          // SWAR zero-detection: true if any 16-bit lane is zero after XOR
-          val hasZero =
-            ((xored - 0x0001000100010001L) & ~xored & 0x8000800080008000L) != 0
-          if (hasZero) {
-            val vi = offset + start + i
-            val si = start + i
-            if (value(vi) == ch) return si
-            if (value(vi + 1) == ch) return si + 1
-            if (value(vi + 2) == ch) return si + 2
-            if (value(vi + 3) == ch) return si + 3
+        // SWAR (SIMD Within A Register) search for BMP chars on 64-bit targets.
+        // On 32-bit / freestanding targets (e.g. ARMv6-M Cortex-M0+), (offset + start)
+        // can be odd (2-byte aligned), causing Intrinsics.loadLong to HardFault.
+        if (!is32BitPlatform && !isFreeStanding) {
+          val charMask =
+            ch.toLong | (ch.toLong << 16) | (ch.toLong << 32) | (ch.toLong << 48)
+          val srcRaw = toRawPtr(value.at(offset + start))
+          while (i + 4 <= len) {
+            val long =
+              Intrinsics.loadLong(Intrinsics.elemRawPtr(srcRaw, i * 2))
+            val xored = long ^ charMask
+            // SWAR zero-detection: true if any 16-bit lane is zero after XOR
+            val hasZero =
+              ((xored - 0x0001000100010001L) & ~xored & 0x8000800080008000L) != 0
+            if (hasZero) {
+              val vi = offset + start + i
+              val si = start + i
+              if (value(vi) == ch) return si
+              if (value(vi + 1) == ch) return si + 1
+              if (value(vi + 2) == ch) return si + 2
+              if (value(vi + 3) == ch) return si + 3
+            }
+            i += 4
           }
-          i += 4
         }
         val vi0 = offset + start
         while (i < len) {
@@ -1105,6 +1112,29 @@ final class _String()
   }
 
   def toLowerCase(): _String = {
+    var idx = 0
+    var needsLower = false
+    var allAscii = true
+    while (idx < count && allAscii) {
+      val c = value(offset + idx)
+      if (c >= 0x80) allAscii = false
+      else if (c >= 'A' && c <= 'Z') needsLower = true
+      idx += 1
+    }
+    if (allAscii) {
+      if (!needsLower) return this
+      val out = new Array[Char](count)
+      var j = 0
+      while (j < count) {
+        val c = value(offset + j)
+        out(j) = if (c >= 'A' && c <= 'Z') (c + 32).toChar else c
+        j += 1
+      }
+      return new _String(0, count, out)
+    }
+    if (isFreeStanding) {
+      return toCase(Character.toLowerCase)
+    }
     replaceCharsAtIndex { i =>
       /* Tests whether we are in an `Final_Sigma` context.
        * From Table 3.17 in the Unicode standard:
@@ -1244,6 +1274,29 @@ for (cp <- 0 to Character.MAX_CODE_POINT) {
   }
 
   def toUpperCase(): _String = {
+    var idx = 0
+    var needsUpper = false
+    var allAscii = true
+    while (idx < count && allAscii) {
+      val c = value(offset + idx)
+      if (c >= 0x80) allAscii = false
+      else if (c >= 'a' && c <= 'z') needsUpper = true
+      idx += 1
+    }
+    if (allAscii) {
+      if (!needsUpper) return this
+      val out = new Array[Char](count)
+      var j = 0
+      while (j < count) {
+        val c = value(offset + j)
+        out(j) = if (c >= 'a' && c <= 'z') (c - 32).toChar else c
+        j += 1
+      }
+      return new _String(0, count, out)
+    }
+    if (isFreeStanding) {
+      return toCase(Character.toUpperCase)
+    }
     replaceCharsAtIndex { i =>
       val c = this.charAt(i)
       if (c < 0x80) null // fast-forward ASCII characters
@@ -1762,10 +1815,184 @@ object _String {
     new _String(data, 0, data.length)
 
   def format(fmt: _String, args: Array[AnyRef]): _String =
-    new Formatter().format(fmt, args).toString
+    if (isFreeStanding) formatFreeStanding(fmt, args)
+    else new Formatter().format(fmt, args).toString
 
   def format(loc: Locale, fmt: _String, args: Array[AnyRef]): _String =
-    new Formatter(loc).format(fmt, args).toString()
+    if (isFreeStanding) formatFreeStanding(fmt, args)
+    else new Formatter(loc).format(fmt, args).toString()
+
+  private def formatFreeStanding(fmt: _String, args: Array[AnyRef]): _String = {
+    val len = fmt.length()
+    val sb = new java.lang.StringBuilder(len + 16)
+    var i = 0
+    var autoIdx = 0
+    while (i < len) {
+      val c = fmt.charAt(i)
+      if (c != '%') {
+        sb.append(c)
+        i += 1
+      } else {
+        i += 1
+        if (i < len) {
+          val next = fmt.charAt(i)
+          if (next == '%') {
+            sb.append('%')
+            i += 1
+          } else if (next == 'n') {
+            sb.append('\n')
+            i += 1
+          } else {
+            // Optional positional argument index: digits followed by '$'
+            var explicitIdx = -1
+            val savedI = i
+            var num = 0
+            while (i < len && fmt.charAt(i) >= '0' && fmt.charAt(i) <= '9') {
+              num = num * 10 + (fmt.charAt(i) - '0')
+              i += 1
+            }
+            if (i > savedI && i < len && fmt.charAt(i) == '$') {
+              explicitIdx = num - 1
+              i += 1
+            } else {
+              i = savedI
+            }
+
+            // Flags
+            var leftAlign = false
+            var zeroPad = false
+            var plusSign = false
+            var spaceSign = false
+            var parsingFlags = true
+            while (i < len && parsingFlags) {
+              fmt.charAt(i) match {
+                case '-' => leftAlign = true; i += 1
+                case '0' => zeroPad = true; i += 1
+                case '+' => plusSign = true; i += 1
+                case ' ' => spaceSign = true; i += 1
+                case _   => parsingFlags = false
+              }
+            }
+
+            // Width
+            var width = 0
+            while (i < len && fmt.charAt(i) >= '0' && fmt.charAt(i) <= '9') {
+              width = width * 10 + (fmt.charAt(i) - '0')
+              i += 1
+            }
+
+            // Precision
+            var precision = -1
+            if (i < len && fmt.charAt(i) == '.') {
+              i += 1
+              precision = 0
+              while (i < len && fmt.charAt(i) >= '0' && fmt.charAt(i) <= '9') {
+                precision = precision * 10 + (fmt.charAt(i) - '0')
+                i += 1
+              }
+            }
+
+            if (i < len) {
+              val conv = fmt.charAt(i)
+              i += 1
+              val argIdx =
+                if (explicitIdx >= 0) explicitIdx
+                else {
+                  val idx = autoIdx
+                  autoIdx += 1
+                  idx
+                }
+              val arg: AnyRef =
+                if (args != null && argIdx >= 0 && argIdx < args.length)
+                  args(argIdx)
+                else null
+
+              val formatted: _String = conv match {
+                case 'd' =>
+                  val v = arg match {
+                    case n: java.lang.Number => n.longValue()
+                    case _                   => 0L
+                  }
+                  val raw = java.lang.Long.toString(v)
+                  if (v >= 0 && plusSign) "+" + raw
+                  else if (v >= 0 && spaceSign) " " + raw
+                  else raw
+                case 'x' | 'X' =>
+                  val raw = arg match {
+                    case b: java.lang.Byte =>
+                      java.lang.Integer.toHexString(b.intValue() & 0xff)
+                    case s: java.lang.Short =>
+                      java.lang.Integer.toHexString(s.intValue() & 0xffff)
+                    case n: java.lang.Integer =>
+                      java.lang.Integer.toHexString(n.intValue())
+                    case l: java.lang.Long =>
+                      java.lang.Long.toHexString(l.longValue())
+                    case n: java.lang.Number =>
+                      java.lang.Long.toHexString(n.longValue())
+                    case _ => "0"
+                  }
+                  if (conv == 'X') raw.toUpperCase() else raw
+                case 'o' =>
+                  arg match {
+                    case n: java.lang.Number =>
+                      java.lang.Long.toOctalString(n.longValue())
+                    case _ => "0"
+                  }
+                case 'c' | 'C' =>
+                  val ch = arg match {
+                    case c: java.lang.Character => c.charValue()
+                    case n: java.lang.Number    => n.intValue().toChar
+                    case _                      => '?'
+                  }
+                  val s = java.lang.Character.toString(ch)
+                  if (conv == 'C') s.toUpperCase() else s
+                case 'b' | 'B' =>
+                  val bStr = arg match {
+                    case null                 => "false"
+                    case b: java.lang.Boolean => b.toString()
+                    case _                    => "true"
+                  }
+                  if (conv == 'B') bStr.toUpperCase() else bStr
+                case _ =>
+                  var s = _String.valueOf(arg)
+                  if (precision >= 0 && precision < s.length()) {
+                    s = s.substring(0, precision)
+                  }
+                  if (conv == 'S') s.toUpperCase() else s
+              }
+
+              val padLen = width - formatted.length()
+              if (padLen <= 0) {
+                sb.append(formatted)
+              } else if (leftAlign) {
+                sb.append(formatted)
+                var p = 0
+                while (p < padLen) { sb.append(' '); p += 1 }
+              } else if (zeroPad && (conv == 'd' || conv == 'x' || conv == 'X' || conv == 'o')) {
+                if (formatted
+                      .length() > 0 && (formatted.charAt(0) == '-' || formatted
+                      .charAt(0) == '+' || formatted.charAt(0) == ' ')) {
+                  sb.append(formatted.charAt(0))
+                  var p = 0
+                  while (p < padLen) { sb.append('0'); p += 1 }
+                  sb.append(formatted, 1, formatted.length())
+                } else {
+                  var p = 0
+                  while (p < padLen) { sb.append('0'); p += 1 }
+                  sb.append(formatted)
+                }
+              } else {
+                var p = 0
+                while (p < padLen) { sb.append(' '); p += 1 }
+                sb.append(formatted)
+              }
+            }
+          }
+        }
+      }
+    }
+    sb.toString()
+  }
 
   def join(delimiter: CharSequence, elements: Array[CharSequence]): String = {
     val sj = new StringJoiner(delimiter)
