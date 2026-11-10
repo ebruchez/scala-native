@@ -70,6 +70,9 @@ private[linker] class Reach(
 
   def result(): ReachabilityAnalysis = {
     cleanup()
+    if (config.targetsFreeStanding) {
+      warnFreeStandingHazards()
+    }
 
     val defns = mutable.UnrolledBuffer.empty[nir.Defn]
     defns.sizeHint(done.size)
@@ -1054,12 +1057,16 @@ private[linker] class Reach(
       referencedFrom: nir.Global
   ): List[BackTraceElement] = {
     val buf = List.newBuilder[BackTraceElement]
+    val visited = mutable.Set.empty[nir.Global]
     def loop(name: nir.Global): List[BackTraceElement] = {
       // orElse just in case if we messed something up and failed to correctly track references
       // Accept possibly empty backtrace instead of crashing
       val current = from.getOrElse(name, ReferencedFrom.Root)
-      if (current == ReferencedFrom.Root) buf.result()
+      if (current == ReferencedFrom.Root || visited.contains(
+            current.referencedBy
+          )) buf.result()
       else {
+        visited += current.referencedBy
         val file = current.srcPosition.source.filename.getOrElse("unknown")
         val line = current.srcPosition.line
         buf += BackTraceElement(
@@ -1072,6 +1079,38 @@ private[linker] class Reach(
       }
     }
     loop(referencedFrom)
+  }
+
+  private def warnFreeStandingHazards(): Unit = {
+    val hazards = Seq(
+      nir.Global.Top("java.util.Formatter") ->
+        "pulls in java.util.Formatter, regex, and locale tables (~400 KB Flash + heavy heap allocations); avoid f\"...\" interpolators and String.format on freestanding targets",
+      nir.Global.Top("scala.scalanative.regex.Parser") ->
+        "pulls in the RE2 regular expression engine and Unicode tables; avoid String.split/matches/replaceAll on freestanding targets",
+      nir.Global.Top("java.lang.StringSpecialCasing$") ->
+        "allocates a 106-entry Unicode special-casing HashMap on the heap; prefer ASCII case conversion on freestanding targets",
+      nir.Global.Top("scala.Console$") ->
+        "eagerly initializes Console.in (BufferedReader + InputStreamReader, ~16 KB heap buffers); prefer System.out or platform serial I/O on freestanding targets",
+      nir.Global.Top("java.util.stream.StreamSupport$") ->
+        "pulls in java.util.stream and Spliterators; prefer while loops or iterators on freestanding targets"
+    )
+
+    hazards.foreach {
+      case (top, reason) =>
+        if (infos.contains(top)) {
+          val trigger = from.keysIterator
+            .find(_.top == top)
+            .getOrElse(top)
+          val trace = getBackTrace(trigger)
+            .take(6)
+            .map(el => s"  at ${el.symbol} (${el.filename}:${el.line})")
+            .mkString("\n")
+          val traceSuffix = if (trace.nonEmpty) s"\n$trace" else ""
+          config.logger.warn(
+            s"[freestanding-lint] Reachable heavyweight class ${top.id}: $reason$traceSuffix"
+          )
+        }
+    }
   }
 
   protected object UnsupportedFeatureExtractor {
