@@ -343,7 +343,10 @@ private[scalanative] object LLVM {
         val envPrefix =
           if (t.env == TargetTriple.Env.EABIHF) TargetTriple.Env.EABI
           else t.env
-        Discover.tryDiscover(s"$archPrefix-${t.os}-$envPrefix-ar").toOption
+        Discover
+          .tryDiscover(s"$archPrefix-${t.os}-$envPrefix-ar")
+          .toOption
+          .orElse(Discover.tryDiscover(s"$archPrefix-$envPrefix-ar").toOption)
       } orElse
         // MacOS ar command does not support -M flag...
         Discover.tryDiscover("ar").toOption.filter(_ => config.targetsLinux)

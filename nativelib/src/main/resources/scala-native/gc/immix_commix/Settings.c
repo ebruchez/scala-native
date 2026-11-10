@@ -10,6 +10,7 @@
 #include "immix_commix/CollectorState.h"
 #include "shared/Parsing.h"
 #include "shared/Settings.h"
+#include "shared/MemoryInfo.h"
 #include "immix_commix/Constants.h"
 #include "shared/Log.h"
 
@@ -18,10 +19,8 @@
 // =============================================================================
 size_t Settings_MinHeapSize(void) {
 #ifdef SCALANATIVE_FREESTANDING
-    size_t limit = Heap_getMemoryLimit();
-    size_t defaultMin =
-        DEFAULT_MIN_HEAP_SIZE < limit ? DEFAULT_MIN_HEAP_SIZE : limit;
-    return Parse_Env_Or_Default("GC_INITIAL_HEAP_SIZE", defaultMin);
+    return Parse_Env_Or_Default("GC_INITIAL_HEAP_SIZE",
+                                __scalanative_initial_memory_size());
 #else
     return Parse_Env_Or_Default("GC_INITIAL_HEAP_SIZE", DEFAULT_MIN_HEAP_SIZE);
 #endif

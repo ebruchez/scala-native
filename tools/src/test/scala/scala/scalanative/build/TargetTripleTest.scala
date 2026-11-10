@@ -34,6 +34,10 @@ class TargetTripleTest {
       TargetTriple("thumb", "unknown", "none", "eabi"),
     "arm-none-eabi" ->
       TargetTriple("arm", "unknown", "none", "eabi"),
+    "armv6kz-none-eabihf" ->
+      TargetTriple("arm", "unknown", "none", "eabihf"),
+    "armv8a-none-eabihf" ->
+      TargetTriple("arm", "unknown", "none", "eabihf"),
     "riscv32-unknown-none-elf" ->
       TargetTriple("riscv32", "unknown", "none", "elf"),
     "aarch64-none-elf" ->

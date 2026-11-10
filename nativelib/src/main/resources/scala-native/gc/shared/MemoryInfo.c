@@ -26,6 +26,11 @@
 __attribute__((weak)) size_t __scalanative_memory_size(void) {
     return (size_t)SCALANATIVE_DEFAULT_HEAP_SIZE;
 }
+__attribute__((weak)) size_t __scalanative_initial_memory_size(void) {
+    size_t max_size = __scalanative_memory_size();
+    size_t default_init = 1024 * 1024;
+    return (max_size < default_init) ? max_size : default_init;
+}
 #elif defined(__unix__) || defined(__unix) || defined(unix) ||                 \
     (defined(__APPLE__) && defined(__MACH__))
 #include <unistd.h>

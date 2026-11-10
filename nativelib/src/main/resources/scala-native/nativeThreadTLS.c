@@ -33,6 +33,15 @@ JavaThread scalanative_currentThread() { return currentThread; }
 NativeThread scalanative_currentNativeThread() { return currentNativeThread; }
 ThreadInfo *scalanative_currentThreadInfo() { return &currentThreadInfo; }
 
+#ifdef SCALANATIVE_FREESTANDING
+#ifndef SCALANATIVE_STACK_SIZE
+#define SCALANATIVE_STACK_SIZE 2048
+#endif
+__attribute__((weak)) size_t __scalanative_stack_size(void) {
+    return (size_t)SCALANATIVE_STACK_SIZE;
+}
+#endif
+
 size_t scalanative_mainThreadMaxStackSize() {
     static size_t computed = -1;
     if (computed == -1) {
@@ -41,10 +50,7 @@ size_t scalanative_mainThreadMaxStackSize() {
         VirtualQuery(&mbi, &mbi, sizeof(mbi));
         computed = (size_t)mbi.RegionSize;
 #elif defined(SCALANATIVE_FREESTANDING)
-#ifndef SCALANATIVE_STACK_SIZE
-#define SCALANATIVE_STACK_SIZE 2048
-#endif
-        computed = (size_t)SCALANATIVE_STACK_SIZE;
+        computed = __scalanative_stack_size();
 #else
         struct rlimit rl;
         if (getrlimit(RLIMIT_STACK, &rl) == 0) {

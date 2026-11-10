@@ -13,6 +13,11 @@ size_t getMemorySize(void);
 /** Returns the size of available free memory (RAM) in bytes. */
 size_t getFreeMemorySize(void);
 
+#ifdef SCALANATIVE_FREESTANDING
+/** Returns the initial heap size in bytes on freestanding targets. */
+size_t __scalanative_initial_memory_size(void);
+#endif
+
 /** OS page size in bytes; result is cached after the first call.
  *
  * Uses `sysconf(_SC_PAGESIZE)` on POSIX and `GetSystemInfo` on Windows — not

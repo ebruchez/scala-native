@@ -5,7 +5,9 @@
 #include "immix_commix/headers/ObjectHeader.h"
 
 #ifdef SCALANATIVE_FREESTANDING
+#ifndef INITIAL_STACK_SIZE
 #define INITIAL_STACK_SIZE 1024
+#endif
 #else
 #define INITIAL_STACK_SIZE (256 * 1024)
 #endif
